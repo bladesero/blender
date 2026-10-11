@@ -418,6 +418,9 @@ Material &MaterialModule::material_sync(const ObjectHandle &ob_handle,
     return mat;
   });
 
+  if (!hide_on_camera) {
+    inst_.film.reconstruction().material_check(ob, blender_mat, mat.shading.gpumat);
+  }
   return mat;
 }
 

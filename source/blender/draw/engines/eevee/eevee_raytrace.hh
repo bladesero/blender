@@ -43,7 +43,7 @@ struct RayTraceBuffer {
     /* Map of tiles that were processed inside the history buffer. */
     Texture tilemask_history_tx = {"tilemask_tx"};
     /** Perspective matrix for which the history buffers were recorded. */
-    float4x4 history_persmat;
+    float4x4 history_persmat = float4x4::identity();
     /** True if history buffer was used last frame and can be re-projected. */
     bool valid_history = false;
     /**
@@ -194,6 +194,7 @@ class RayTraceModule {
   RayTraceTileBuf fast_gi_tracing_tiles_buf_ = {"fast_gi_tracing_tiles_buf_"};
   RayTraceTileBuf fast_gi_denoise_tiles_buf_ = {"fast_gi_denoise_tiles_buf_"};
   /** Texture containing the ray direction and PDF. */
+  Texture ray_path_tx_ = {"ray_path_tx"};
   TextureFromPool ray_data_tx_ = {"ray_data_tx"};
   /** Texture containing the ray hit time. */
   TextureFromPool ray_time_tx_ = {"ray_data_tx"};

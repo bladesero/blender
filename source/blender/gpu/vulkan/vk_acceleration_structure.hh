@@ -23,6 +23,7 @@ class VKAccelerationStructure : public AccelerationStructure {
   VkAccelerationStructureTypeKHR type_ = VK_ACCELERATION_STRUCTURE_TYPE_MAX_ENUM_KHR;
   bool allow_update_ = false;
   bool valid_ = false;
+  bool opaque_ = true;
 
   bool build(VkAccelerationStructureGeometryKHR geometry,
              uint32_t primitive_count,
@@ -32,7 +33,10 @@ class VKAccelerationStructure : public AccelerationStructure {
 
  public:
   ~VKAccelerationStructure() override;
-  bool build_mesh(Span<float3> positions, Span<uint3> triangles, bool allow_update) override;
+  bool build_mesh(Span<float3> positions,
+                  Span<uint3> triangles,
+                  bool allow_update,
+                  bool opaque = true) override;
   bool build_instances(Span<RayTracingInstance> instances) override;
   void bind(int slot) override;
   bool is_valid() const override

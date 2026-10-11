@@ -29,22 +29,48 @@ struct [[host_shared]] HardwareRTTriangle {
   float4 corner2;
   float4 uv_y;
   uint4 material;
+  /* Offset and length in the independent, material-referenced UV attribute buffer. */
+  uint4 attributes;
 };
 
+struct [[host_shared]] HardwareRTUVAttribute {
+  float4 uv01;
+  float4 uv2;
+  float4 tangent0;
+  float4 tangent1;
+  float4 tangent2;
+};
+
+/* Fixed affine texture descriptors, not a GPU node program. */
 struct [[host_shared]] HardwareRTParameter {
   float4 value;
-  /* Pixel offset, width, height, extension/interpolation/channel flags; width=0: constant. */
+  /* Array/layer, width, height; addressing/filter and Image Texture alpha conversion flags. */
   uint4 texture;
+  float4x4 color_transform;
+  float4 uv_row0;
+  float4 uv_row1;
+  /* Referenced UV attribute, final clamp, constant coordinates, reserved. */
+  uint4 mapping;
 };
 
 struct [[host_shared]] HardwareRTMaterial {
+  struct HardwareRTParameter weight;
   struct HardwareRTParameter base_color;
   struct HardwareRTParameter roughness;
   struct HardwareRTParameter metallic;
   struct HardwareRTParameter emission;
   struct HardwareRTParameter emission_strength;
+  struct HardwareRTParameter normal_color;
+  struct HardwareRTParameter normal_strength;
+  struct HardwareRTParameter alpha;
+  /* Lightweight shading, stochastic coverage, reserved. Geometry opacity is stored per BLAS. */
+  uint4 capability;
+  /* Enabled, node space, DirectX convention, reserved. */
+  uint4 normal_info;
   /* IOR, specular level, supported, pure diffuse/emission. */
   float4 properties;
+  /* Root records reference independent closure records; leaf records have an empty range. */
+  uint4 closures;
 };
 
 struct [[host_shared]] HardwareIrradianceProbe {
@@ -143,7 +169,7 @@ struct [[host_shared]] RayTraceData {
   bool32_t use_backface_hit;
   /** Amount of frontface lighting to use for backface hits. */
   float backface_hit_scale;
-  uint _pad0;
+  bool32_t use_rr;
   uint _pad1;
 
   struct ScreenThicknessParameters fast_gi_thickness;

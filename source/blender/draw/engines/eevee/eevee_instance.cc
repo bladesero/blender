@@ -32,9 +32,9 @@
 
 #include "RE_pipeline.h"
 
+#include "BLI_path_utils.hh"
 #include "eevee_instance.hh"
 #include <cstdlib>
-#include "BLI_path_utils.hh"
 
 #include "DNA_particle_types.h"
 
@@ -157,6 +157,15 @@ void Instance::init(const int2 &output_res,
   update_eval_members();
 
   info_ = "";
+  if (!is_viewport() && (G.debug & G_DEBUG_GPU) &&
+      ELEM(G.debug_value,
+           int(DEBUG_HARDWARE_RT_SHADING_NORMAL),
+           int(DEBUG_HARDWARE_RT_NORMAL_ERROR),
+           int(DEBUG_HARDWARE_RT_DIFFUSE_ALBEDO),
+           int(DEBUG_HARDWARE_RT_DIFFUSE_ERROR)))
+  {
+    debug_mode = eDebugMode(G.debug_value);
+  }
 
   if (is_viewport()) {
     is_image_render = draw_ctx->is_image_render();
@@ -358,6 +367,7 @@ void Instance::begin_sync()
     return;
   }
 
+  film.reconstruction().begin_sync();
   materials.begin_sync();
   velocity.begin_sync(); /* NOTE: Also syncs camera. */
   lights.begin_sync();

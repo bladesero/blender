@@ -24,7 +24,7 @@ from mathutils import Quaternion, Vector
 import numpy as np
 
 
-def main(output, hardware_raytracing=False, rr=False):
+def main(output, hardware_raytracing=False, rr=False, compatibility="NONE", overscan=0):
     output.mkdir(parents=True, exist_ok=True)
     bpy.context.preferences.view.show_splash = False
     scene = bpy.context.scene
@@ -33,6 +33,8 @@ def main(output, hardware_raytracing=False, rr=False):
     scene.eevee.taa_samples = 32
     scene.eevee.use_raytracing = hardware_raytracing
     scene.eevee.dlss_rr = rr
+    scene.eevee.use_overscan = overscan > 0
+    scene.eevee.overscan_size = overscan
     if hardware_raytracing:
         scene.eevee.ray_tracing_method = 'HARDWARE'
     scene.world.color = (0.15, 0.15, 0.15)
@@ -54,6 +56,30 @@ def main(output, hardware_raytracing=False, rr=False):
         metal.node_tree.nodes['Principled BSDF'].inputs['Metallic'].default_value = 0.9
         metal.node_tree.nodes['Principled BSDF'].inputs['Roughness'].default_value = 0.18
         sphere.data.materials.append(metal)
+    if compatibility != 'NONE':
+        if not sphere.data.materials:
+            surface = bpy.data.materials.new('Compatibility surface')
+            surface.use_nodes = True
+            sphere.data.materials.append(surface)
+        surface = sphere.data.materials[0]
+        tree = surface.node_tree
+        bsdf = tree.nodes['Principled BSDF']
+        if compatibility in {'NORMAL', 'NORMAL_TEXTURE'}:
+            normal = tree.nodes.new('ShaderNodeNormalMap')
+            normal.inputs['Color'].default_value = (0.7, 0.5, 0.95, 1)
+            tree.links.new(normal.outputs['Normal'], bsdf.inputs['Normal'])
+            if compatibility == 'NORMAL_TEXTURE':
+                normal_image = bpy.data.images.new('HWRT mip regression', 128, 128)
+                normal_image.colorspace_settings.name = 'Non-Color'
+                normal_image.generated_color = (0.7, 0.5, 0.95, 1)
+                texture = tree.nodes.new('ShaderNodeTexImage')
+                texture.image = normal_image
+                tree.links.new(texture.outputs['Color'], normal.inputs['Color'])
+        elif compatibility == 'SSS':
+            bsdf.inputs['Subsurface Weight'].default_value = 0.8
+        else:
+            surface.surface_render_method = compatibility
+            bsdf.inputs['Alpha'].default_value = 0.35
     bpy.ops.object.shade_smooth()
     for x in range(-4, 5):
         bpy.ops.mesh.primitive_cube_add(size=1, location=(x * 0.6, 2, 1.5))
@@ -130,10 +156,17 @@ def main(output, hardware_raytracing=False, rr=False):
                 state['capture'] = '04_cut'
             elif i == 50:
                 scene.eevee.dlss_quality = 'BALANCED'
+                if compatibility == 'NORMAL_TEXTURE':
+                    # Regenerate array mips with specialized shaders already used by the viewport.
+                    normal_image.generated_color = (0.5, 0.7, 0.95, 1)
+                    normal_image.update()
             elif i == 56:
                 state['capture'] = '05_balanced'
             elif i == 58:
                 scene.eevee.dlss_quality = 'PERFORMANCE'
+                if compatibility == 'NORMAL_TEXTURE':
+                    normal_image.scale(64, 64)
+                    normal_image.update()
             elif i == 64:
                 state['capture'] = '06_performance'
             elif 66 <= i < 74:
@@ -182,12 +215,20 @@ def main(output, hardware_raytracing=False, rr=False):
                 scene.eevee.dlss_rr = True
             elif rr and i == 127:
                 state['capture'] = '14_sr_to_rr'
-            elif i >= (129 if rr else 113):
+            elif rr and i == 129:
+                scene.eevee.ray_tracing_method = 'SCREEN'
+            elif rr and i == 135:
+                state['capture'] = '15_hwrt_disabled_sr'
+            elif rr and i == 137:
+                scene.eevee.ray_tracing_method = 'HARDWARE'
+            elif rr and i == 143:
+                state['capture'] = '16_hwrt_reenabled_rr'
+            elif i >= (145 if rr else 113):
                 result = {'backend': gpu.platform.backend_type_get(),
                           'hardware_raytracing': hardware_raytracing,
                           'rr': rr,
                           'captures': state['captures'],
-                          'passed': not state['failed'] and len(state['captures']) == (15 if rr else 13)}
+                          'passed': not state['failed'] and len(state['captures']) == (17 if rr else 13)}
                 (output / 'result.json').write_text(json.dumps(result, indent=2))
                 print('DLSS_TEST_RESULT', json.dumps(result), flush=True)
                 bpy.ops.wm.quit_blender()
@@ -210,5 +251,7 @@ if __name__ == '__main__':
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--hardware-raytracing', action='store_true')
     parser.add_argument('--rr', action='store_true')
+    parser.add_argument('--compatibility', choices=['NONE','NORMAL','NORMAL_TEXTURE','BLENDED','DITHERED','SSS'], default='NONE')
+    parser.add_argument('--overscan', type=float, default=0)
     args = parser.parse_args(sys.argv[sys.argv.index('--') + 1:])
-    main(args.output, args.hardware_raytracing or args.rr, args.rr)
+    main(args.output, args.hardware_raytracing or args.rr, args.rr, args.compatibility, args.overscan)

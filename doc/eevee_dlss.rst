@@ -35,7 +35,7 @@ Viewport > DLSS Super Resolution. The corresponding RNA property is
 in the blend file; support is checked locally at runtime.
 
 Native fallback is used for unsupported GPUs/backends/builds, missing runtime, NGX
-failure, non-Combined passes, render regions, overscan, XR, viewport compositing,
+failure, non-Combined passes, render regions, XR, viewport compositing,
 transparent film, and camera depth of field. The viewport information text describes
 fallback. Viewport image renders retain their native path. An unsupported configuration
 does not silently change the saved user setting.
@@ -44,10 +44,16 @@ Final renders use the separate ``scene.eevee.dlss_render_quality`` setting. RR s
 are ``scene.eevee.dlss_rr`` (viewport) and ``scene.eevee.dlss_render_rr`` (final). All new
 settings default to off, and RR requires quality other than Off. Final output supports
 Combined only; data passes, AOVs, Cryptomatte, multiview and render borders fall back.
-Motion blur, DOF, volumes, transparent film, forward shading and transmission also
-select native rendering. RR requires the branch's supported hardware-RT material subset;
-unsupported secondary-hit materials, including normal maps and layered shaders, fall back.
-Curves, point clouds, particle hair and the specialized sculpt path also reject RR.
+Motion blur, DOF, volumes, transparent film, Holdout and Shader to RGB still
+select native rendering. Refraction remains unsupported by SR. SR supports SSS, thin Translucent, Dithered transparency and
+Normal Map shading. Blended surfaces use output-resolution composition after SR.
+RR uses mixed tracing: lightweight PBR and transparency use hardware queries;
+SSS, Translucent, glass and complex graphs retain native screen/probe shading without
+blocking RR. Unsupported geometry remains a frame-level restriction. Primary materials
+are always evaluated by EEVEE; no saved material or image is rewritten.
+
+Overscan expands the NGX target and camera view; output adapters crop back to the exact
+requested dimensions. Render border, panoramic cameras and multiview remain unsupported.
 
 Pipeline and lifetime
 ---------------------
@@ -58,8 +64,9 @@ final linear RGBA output. Final reconstruction does not require a window or ``rv
 
 * NGX supplies the input size for the selected output size and quality.
 * EEVEE shades at input resolution. SR retains native denoising. RR traces at input
-  resolution with spatial filtering, temporal and bilateral ray denoising disabled.
-  The spatial resolve shader only copies one ray per pixel in this configuration.
+  resolution. A per-ray ownership image bypasses spatial, temporal and bilateral
+  denoising only for hardware-resolved RR rays. Native rays retain the user-selected
+  denoising stages; filters reject RR-owned neighbors/history.
   Lighting composition, material weights and world-space illumination caches remain.
 * RR guides are captured before GBuffer and ray-time pool release. Evaluated GBuffer
   reflection color already contains integrated BRDF reflectance and closure weights.
@@ -200,8 +207,8 @@ simulate a physical Escape key. Use the same saved ``.blend`` for cross-process
 determinism comparisons (``--save-fixture`` and ``--use-existing-scene`` in the render
 runner), rather than separately generating a new fixture in each process.
 
-RR and final-render validation record (2026-10-11)
-------------------------------------------------
+RR and final-render baseline validation (2026-10-11, before material extension)
+----------------------------------------------------------------------------
 
 Release build and installation succeeded with SDK 310.4.0 on RTX 4070 SUPER,
 driver 610.88. The final implementation retains experimental status.
@@ -256,8 +263,379 @@ images, raw arrays, guide dumps and per-case logs beside it. Older failed harnes
 iterations remain in that directory; the summary explicitly selects final runs.
 
 Outstanding acceptance includes physical non-RTX hardware, broad production scenes,
-long animation/disocclusion sequences and exhaustive perceptual review. Normal-mapped
-and layered secondary-hit materials currently select native rendering; successful
+long animation/disocclusion sequences and exhaustive perceptual review. At this baseline,
+normal-mapped and layered secondary-hit materials selected native rendering; successful
 fallback is not acceptance of those materials under RR. Other unsupported effects and
 data workflows likewise retain the native path. These limits prevent claiming full
 production visual acceptance from API success alone.
+
+
+Material compatibility extension
+--------------------------------
+
+SR and RR use separate capability checks. Diagnostics list stable reason codes, actual
+mode, View Layer/pass names and material/object names when known. Shader compilation is
+allowed to finish before evaluating material restrictions; placeholder materials must
+not permanently force a native retry. Viewport text summarizes the first reason and the
+console reports the full list when it changes. New settings remain off in old files.
+
+Blended surfaces are excluded from low-resolution SR input. Their radiance and RGB
+transmittance are evaluated at the expanded output resolution against a freshly rasterized
+opaque/Dithered depth buffer. The final composition is ``L + T * reconstructed_background``
+in linear HDR. Viewports use four spatial samples per update, with no previous-frame
+transparent history. Final renders average L and T within the output frame. Screen ray-cast
+nodes combined with Blended surfaces remain unsupported. This path has additional depth,
+lighting and memory costs and does not claim a speedup.
+
+Dithered coverage, SSS and thin Translucent shading require static Monte Carlo convergence
+in addition to SR. Their SR color input therefore has a scene-linear running mean on an
+unjittered grid, with cubic resampling into the current jittered sample. Camera movement,
+depsgraph changes, time changes, mode/size changes and new output frames reset this mean.
+RR does not use it. It substantially reduces stochastic transparency/shadow noise but can
+soften small details; this is not equivalent to native full-resolution accumulation.
+Final output still uses the last SR result and never runs Film TAA over that result.
+
+Secondary-hit Normal Map evaluation supports Tangent, Object, World and Blender legacy
+spaces, OpenGL/DirectX conventions, Strength, explicit UV Map nodes and independent texture
+and tangent UV sets. Mesh corner normals and MikkTSpace tangents match raster interpolation,
+including mirrored UVs and nonuniform/negative scale. Geometry normals remain separate for
+ray bias and geometry checks. Missing UV/tangent data and unsupported node chains are
+reported, not silently replaced with Base Color or geometric normals. Texture format,
+source restrictions still apply. The former 64 MiB secondary-image storage pool is
+replaced by the texture-array foundation described below.
+
+Debug values 23 and 24 show secondary shading normals and absolute component error
+against GBuffer normals. They are also available in final renders with ``--debug-gpu``.
+Boundary pixels can compare different surfaces and are excluded from interior error
+measurements. RR guides continue to use evaluated GBuffer normals; maps are not applied twice.
+
+Run compatibility fixtures with::
+
+  blender --factory-startup -b --gpu-backend vulkan --debug-gpu --python-exit-code 1 --python tests/python/eevee_dlss_compatibility.py -- --case BLENDED --overscan 3 --output captures
+  blender --factory-startup -b --gpu-backend vulkan --debug-gpu --python-exit-code 1 --python tests/python/eevee_dlss_compatibility.py -- --case NORMAL_UV --mode RR --output captures
+
+The viewport runner accepts ``--compatibility BLENDED|DITHERED|SSS|NORMAL`` and
+``--overscan``. The F12/cancellation runner accepts ``--blended`` or ``--normal``.
+Use ``--profile-gpu`` in a dedicated output directory for debug-group CPU timings,
+including ``DLSS.OutputTransparency.Depth`` and ``DLSS.OutputTransparency.Shade``.
+This Vulkan backend does not emit GPU durations for these groups. Only the NGX phase
+has explicit Vulkan timestamp measurements through ``BLENDER_DLSS_PROFILE=1``.
+
+
+Material extension validation (2026-10-11)
+------------------------------------------
+
+Release build/install succeeded from base ``a95482d2c79`` plus this working-tree
+extension, using the same RTX 4070 SUPER / driver 610.88 / SDK 310.4.0 environment.
+Selected authoritative runs and exact metrics are listed in
+``E:/gitrepo/dlss_compat_validation/validation_summary.json``. Earlier exploratory
+runs in that directory are intentionally excluded from the summary.
+
+* SR background fixtures passed for Dithered, Blended (including colored
+  transmittance), SSS and thin Translucent materials. Odd 641x361 output, 10 percent
+  overscan, orthographic cameras and all quality modes were exercised.
+* Normal-mapped RR executed successfully with native denoising bypass. Interior
+  component error against raster GBuffer normals was about 0.00005--0.00052 on
+  Tangent/Object/World/legacy fixtures, including mirrored UVs, independent normal
+  texture/tangent UV sets and negative/nonuniform scale. DirectX decoding, Strength
+  textures, animated deformation and material edits also executed successfully.
+* The normal-mapped object in the secondary-hit fixture is behind the camera and
+  appears only in the mirror. Changing Strength changes the reflection (mean RGBA
+  absolute difference 0.0140367), demonstrating secondary-hit evaluation rather
+  than only a changed primary GBuffer guide.
+* Missing UVs, degenerate tangents and Bump produce explicit reasons and native
+  fallback. OpenGL retains native rendering. Vulkan synchronization validation had
+  no errors in the selected runs. Existing unconsumed-fragment-output warnings also
+  occur in native EEVEE runs and are not claimed to be eliminated.
+* Viewport SR regressions passed for ordinary, Blended, Dithered and SSS fixtures
+  (13 captures each). Normal-map RR passed 17 captures, including live RR/SR,
+  hardware-tracing disable/re-enable, quality/size changes, split views and active
+  feature destruction.
+* Both Blended SR and normal-mapped RR passed asynchronous F12 completion and
+  cancellation followed by recovery. PNG and linear EXR contain finite HDR RGBA
+  with the requested dimensions and opaque alpha.
+* Blended frames from the same saved file are bit-identical in forward/reverse
+  order. Repeated frames after deformation, material edits, Dithered changes and
+  SSS also match exactly in this environment. The Blended injected NGX failure
+  restarts native rendering once; compared with a fresh native process its RGBA
+  MAE is 0.00000703 and maximum difference 0.0112305. This case is not bit-identical
+  and is recorded separately from the frame-order tests.
+* The supplied character file renders through actual SR with original materials
+  and 3 percent overscan after disabling extra passes in a separate test copy.
+  Keeping its original passes reports the View Layer and Normal/Diffuse/Glossy/
+  Transmission pass names and falls back. The source file was not saved or changed.
+  ``character_ready/fixture.blend`` enables SR with Combined-only output at
+  1440x1920 and 64 samples. It is an SR test copy, not a supported full-character RR
+  scene. At 720x960/32 samples the SR RGB MAE against native 256 samples was
+  0.00494604, versus 0.0110403 before static color integration. Fine detail remains
+  softer than native; the metric does not establish perceptual equivalence.
+* The render-graph regression suite remains 52 passed / one pre-existing skip;
+  Python harness syntax and ``git diff --check`` passed.
+
+A separate 1920x1080, 32-sample Blended fixture with 3 percent overscan measured
+1.326 seconds native versus 2.104 seconds SR, including initialization/readback and
+file/image processing. NGX Vulkan timestamps measured 0.721 ms steady mean per
+SR evaluation (23.510 ms total over 32 calls). SDK allocations were 108.8 MB.
+Sampled whole-device memory peaked at 4217 MiB native and 4263 MiB SR, against
+approximately 2523--2533 MiB baseline; these are not exact per-process peaks.
+The Vulkan debug-group profiler reports CPU durations only in this backend, so
+transparent-pass and total EEVEE GPU durations remain unmeasured. No acceleration
+claim follows from these simple-scene results.
+
+This extension remains experimental. Broad production scenes, long moving
+transparency/disocclusion sequences and physical non-RTX hardware still need
+acceptance. The mirror fixture also exposes existing hardware-RT shadow stair-step
+artifacts. RR SSS/transparency/layered materials and other unsupported effects or
+data workflows continue to use native rendering; their support is not implied by
+the Normal Map extension. Missing-runtime checks belong to the earlier baseline
+and were not repeated after these material-only changes.
+
+Historical full-material foundation (superseded scope)
+----------------------------------------------------
+
+The following records predate the lightweight mixed-tracing implementation below.
+The proposed full secondary SSS/Translucent/glass evaluator was not accepted and is
+outside the revised scope. Earlier native/SR character fallback was not an RR pass;
+those historical results must not be confused with current mixed-tracing acceptance.
+
+Implemented infrastructure:
+
+* ``DLSSFrame`` has optional before-transparency color, premultiplied transparency
+  radiance, RGB opacity, transparency motion, signed SSS guide, disocclusion and
+  current-color bias inputs. Vulkan snapshots their descriptors, validates input
+  sizes/pairs and includes every supplied image in the external-compute dependency
+  graph. These fields do not establish that the runtime honors every guide.
+* Mesh BLAS construction accepts an opaque flag. Changing that flag rebuilds the
+  BLAS instead of attempting an invalid Vulkan update. The candidate-hit accessor
+  exposes distance, identity, barycentrics and front-face state before commitment.
+  EEVEE's production traversal remains opaque until material evaluation is ready.
+* Secondary images share mipmapped GPU arrays by image identity, dimensions and
+  precision. Byte images are uploaded as scene-linear RGBA16F and float images as
+  RGBA32F without resolution reduction. There are eight descriptor groups and the
+  device's array-layer limit, with explicit capacity/allocation failure. Image size
+  changes leave reusable layer slots; binding is deferred until resources exist.
+  The current secondary sampler still uses LOD zero; ray-footprint LOD selection
+  is outstanding. Multilayer/animated/tiled sources remain unsupported.
+* SSS capture surrounds the existing EEVEE convolution. It saves unweighted diffuse
+  lighting in FP32 and writes signed FP16
+  ``dot((after - before) * diffuse_albedo, (0.25, 0.5, 0.25))`` with zero outside
+  SSS surfaces. With ``--debug-gpu`` and ``BLENDER_DLSS_DUMP_DIR``, SR can export
+  this diagnostic without bypassing the RR material gate. Exported buffers use
+  top-left row order. Secondary-hit SSS is not implemented by this capture.
+
+Tests and the transparency contract
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``GPUVulkanTest.dlss_rr_optional_inputs_lifetime`` exercises all optional inputs,
+resource reuse/aliasing and active feature destruction. Invalid input sizes and
+unpaired transparency inputs are rejected. The render-graph test covers fourteen
+RR input images and reuse of all seven auxiliary guides. The non-opaque ray-query
+test rejects a foreground candidate, accepts the background triangle and switches
+BLAS opacity twice with unchanged topology.
+
+The opt-in ``GPUVulkanTest.dlss_rr_transparency_probe`` exports raw RGBA32F outputs
+and a CSV to ``BLENDER_DLSS_PROBE_DIR``. Put the SDK's ``nvngx_dlss.dll`` and
+``nvngx_dlssd.dll`` beside ``blender_test.exe`` before running it. The variants are:
+
+0. Fully composited noisy color; no transparency overlay.
+1. Background color plus premultiplied RGBA16F overlay and separate RGB opacity.
+2. Variant 1 with inverted separate opacity.
+3. Background plus native three-channel R11G11B10F overlay/opacity.
+4. Variant 3 with inverted separate opacity.
+5. Variant 3 with deliberately wrong overlay radiance.
+6. Variant 1 with inverted overlay alpha.
+7. Deliberately double-counted overlay: composited color plus the overlay again.
+
+On RTX 4070 SUPER / driver 610.88 / SDK 310.4.0 / RR preset D, NGX succeeds, but
+variants 1/2 are bit-identical, as are 3/4. Changing overlay radiance or its alpha
+does affect output. Thus this experiment has **not validated separate RGB opacity**.
+It does not prove that every possible SDK configuration ignores that resource.
+No colored-transparency material gate is relaxed on the strength of API success.
+The probe passing means execution/export succeeded, not that transparency semantics
+or visual quality passed. Its per-variant comparison requires separate inspection.
+
+The material expression/closure compiler, secondary SSS and thin transmission,
+production transparent traversal/shadows, transparent motion/history rejection,
+solid/thin glass transport and overflow fallback remain outstanding. The original
+character RR, F12/animation material acceptance, 300-frame motion sequence and
+quality/performance comparisons therefore remain unaccepted.
+
+Foundation validation on 2026-10-11 used the same RTX/driver/SDK configuration:
+58 selected Vulkan GPU/render-graph tests passed, with one existing scheduler skip.
+Twelve background frames covered normal-map RR, four 2048-square image-array RR,
+SSS SR and Blended SR, each in frame order 1,2,1. All 384 expected NGX evaluations
+succeeded; the selected logs contained no Vulkan validation errors. Repeated frame
+1 outputs were bit-identical, with finite PNG/EXR output at 320x240. The array test
+also shared an image across materials and resized it to 1024-square on frame 2.
+The SSS diagnostic ranged from -0.2314453125 to 0.223388671875, with 314 negative
+and 338 positive pixels and zero nonzero background pixels.
+
+The original character was opened with auto-execution disabled. A separate copy
+retained its material graphs and images, disabled extra passes and requested HWRT/RR.
+Its small diagnostic render still reported ``requested RR; actual Native``, naming
+the unsupported objects/materials and shader roots. The source file's SHA-256 was
+unchanged. This is a verified **failed material acceptance**, not an RR success.
+Evidence is saved locally under ``E:/gitrepo/rr_material_validation/``;
+``validation_summary.json`` separates execution tests from failed transparency
+semantics and incomplete full-material acceptance. No 300-frame or new-material
+F12/viewport quality acceptance is claimed by this foundation run.
+
+HWRT material mip crash repair
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Read-only HWRT material arrays must not request ``GPU_TEXTURE_USAGE_SHADER_WRITE``.
+That flag selects the compute mip generator, whose restoration of a previously bound
+shader does not preserve specialization constants. Updating a material image while a
+specialized shader is bound can therefore hit the ``GPU_shader_bind`` assertion
+``Shader requires specialization constants but none was passed``.
+
+The arrays now request shader-read usage. Their Vulkan mip chain is generated with
+backend blits, preserving the active shader and specialization state. HWRT, mipmaps
+and the assertion remain enabled. This addresses the new HWRT caller; it does not
+change the general compute mip helper's state-restoration contract.
+
+``GPUVulkanTest.ray_query_material_image_mips`` reproduced the exact assertion with
+the previous usage. It passes with read-only usage and verifies both array layers at
+the final mip. The viewport fixture's ``NORMAL_TEXTURE`` case additionally updates
+and resizes the image during active rendering.
+
+
+Lightweight mixed tracing (2026-10-11)
+-------------------------------------
+
+The production hardware shader no longer contains a generic node VM, expression
+SSBO, register file or Noise evaluator. CPU graph resolution handles node groups,
+reroutes and muted links. Each accepted parameter is a constant or one image sample
+with fixed affine channel/color and UV transforms. Supported operations include
+Multiply color, scalar Add/Subtract/Multiply/Divide, RGB separation, constant Mapping,
+and socket conversions. Intermediate clamps, multiple image inputs and other nodes
+select native shading with their node path. Shared original-resolution image arrays,
+independent UV/tangent attributes and the read-only mip-generation fix remain.
+Secondary texture sampling currently uses LOD zero; footprint-based LOD is not added.
+
+Principled base/metal/roughness/emission/alpha, Diffuse, Emission and Transparent
+closures are supported within the existing PBR parameter limits. A direct surface /
+Transparent Mix is accepted; general Add/Mix graphs use native shading. IOR/specular
+level must remain constant, Specular Tint white, and secondary coat, sheen, SSS,
+transmission, anisotropy and arbitrary normal expressions remain native. These limits
+apply to secondary shading, not to the original EEVEE primary material graph.
+
+Geometry inclusion is independent of material shading support. Non-opaque geometry
+stays in BLAS. Hardware tracing checks the raster surface and secondary hits, then
+leaves unresolved rays for the existing screen/probe pass. It never skips an unsupported
+surface and continues into geometry behind it. Off-screen complex materials deliberately
+retain probe/environment approximations; complete off-screen glass/SSS is not claimed.
+Lightweight transparent paths repeatedly query the nearest surface, up to 64 crossings.
+Radiance uses weighted surface contributions and RGB continuation; Dithered coverage
+uses stochastic continuation with probability compensation. Shadow and irradiance-cache
+visibility also retain RGB transmission. Unknown visibility and exhausted budgets use
+native/probe fallback instead of a fabricated opaque/transparent material.
+
+RR consumes the complete input-resolution HDR composition, including native SSS,
+refraction and transparency. Before-transparency color uses the same format and row
+orientation. Separate-layer inputs are empty for this contract; supplying both modes
+is rejected. There is no SR pass or transparent draw after RR. SSS scattering remains
+active. Native/probe hit distances are not presented as hardware reflection distances.
+Viewport layered-material updates and camera motion conservatively reset reconstruction
+history; local transparent motion conflict masks are not relied on as verified SDK inputs.
+This conservative policy can reduce temporal stability during motion.
+
+``RR active; mixed tracing`` reports local screen/probe fallbacks with object/material/
+node details. ``--debug-gpu`` additionally reports per-closure routing counts and compares
+raw RR-owned ray radiance against the final denoise result. ``max_error=0`` verifies actual
+bypass rather than just a mode flag. These readbacks explicitly request HOST_READ and
+are diagnostic overhead, not representative performance measurements.
+
+Initial validation on RTX 4070 SUPER / driver 610.88 / NGX 310.4.0:
+
+* Ten selected GPU/render-graph tests passed; the opt-in independent transparency-layer
+  experiment was skipped. This includes the specialized-shader mip regression.
+* PBR, mixed PBR/SSS/glass/Noise/transparency, independent-UV Normal Map, Dithered,
+  colored transparency, SSS and glass rendered 21 background frames in order 1,2,1.
+  All 672 RR evaluations succeeded and repeated frame 1 outputs were bit-identical.
+  Selected logs contained no Vulkan validation errors. PNG/linear EXR were finite,
+  320x240, with opaque alpha.
+* The supplied character rendered through actual RR at 320x426 with its original
+  material graphs and images. Seven materials reported local fallback. Both active
+  hardware closure sets had exactly zero denoise-bypass error. The original file's
+  SHA-256 matched before/after this test; only a separate test copy was saved.
+
+Evidence is under ``E:/gitrepo/rr_material_validation/``. The full secondary-material
+proposal is intentionally not implemented. API success is distinct from motion/visual
+acceptance and per-stage performance measurements; consult the latest validation report
+for the completed runs and remaining limitations.
+
+Latest mixed-path validation and open failures
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The local ``mixed_rr`` Release install (validation build 16) is experimental.
+It has **not passed the complete numerical and visual acceptance criteria**.
+The older full-material proposal above is superseded, not silently enabled.
+
+* The latest 300-frame mixed-material sequence completed all 9,600 expected RR
+  evaluations, with zero measured hardware-denoise bypass error and no selected
+  Vulkan validation/assertion failures. Camera motion, mesh deformation and alpha
+  changes are included. This establishes execution/lifetime coverage, not visual
+  approval of every frame.
+* The supplied character completed actual viewport RR and a 1584x2112, 128-sample
+  background RR render. Seven materials retained local native/probe fallbacks.
+  The saved acceptance copy retains original graphs and textures; the source file
+  hash was checked before/after the copy/render test and remained unchanged.
+  PNG and linear EXR are finite and keep the requested dimensions.
+* Latest F12 completion, cancellation/recovery and denoising configurations NONE,
+  SPATIAL and TEMPORAL completed. Ten selected Vulkan tests passed, with the optional
+  separate-transparency-layer experiment skipped. Missing RR DLL selected SR;
+  OpenGL and extra Depth pass selected native. Injected NGX failure discarded the
+  reconstruction and rerendered natively once.
+* Independent-UV Normal Map, image array update/resize, Blended and SSS SR regressions
+  completed. The affine parameter fixture and its constant reference are bit-identical.
+
+Forward/reverse 300-frame outputs from validation build 14 differ by up to 2.515625
+in linear HDR channels; isolated frame 150 differs from the forward run by 0.328125.
+Both exceed the configured 0.0001 absolute tolerance. Repeating a frame inside one
+process can be bit-identical, which is insufficient to certify farm/order isolation.
+Build 16 targeted reruns still fail (maximum 1.046875). First-sample RR inputs were
+identical in the investigated pair; later native lighting/SSS inputs differed slightly
+and RR output differences were larger. The root cause remains unresolved.
+
+During that investigation, unused denoise-neighbor tiles were found to be skipped by
+RR passthrough. Clearing now precedes passthrough; invalid histories are initialized,
+and RR ownership markers survive temporal denoising without bilateral filtering.
+These corrections do not constitute a fix for the remaining order dependence.
+``BLENDER_DLSS_DUMP_SAMPLE`` selects the diagnostic sample (default 1).
+
+Visual inspection of the character against same-sample native output found noticeable
+transparent-cloth grain and ground-shadow differences. Native effects are present,
+but preservation of their appearance is not yet accepted. The exact matched-screen-hit
+branch, isolated colored-shadow energy and all 300 frames still need dedicated visual
+and numerical review. Secondary texture LOD remains zero, and conservative layered
+history resets can limit viewport convergence.
+
+At 1280x720 / 32 samples, measured NGX steady GPU times were 1.068 ms per RR sample
+and 0.418 ms per SR sample. Whole render/readback/file-export times were 1.630 s RR,
+1.523 s SR and 0.773 s native EEVEE with HWRT in this fixture. These are different
+measurements and show no overall RR speedup here. Full per-stage GPU profiling and
+controlled cold-cache compilation/peak-memory comparison remain outstanding.
+
+``tests/python/eevee_dlss_mixed_validate.py`` writes a machine-readable FAIL report
+for the unresolved numerical comparisons, even when every NGX call succeeds.
+Local evidence, a binary hash manifest and the detailed report are saved in
+``E:/gitrepo/rr_material_validation/lightweight_validation.md``.
+
+Legacy pass compatibility repair (2026-10-12)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Saved Cycles-only Diffuse Indirect, Glossy Indirect and Transmission flags can remain
+enabled while EEVEE's View Layer panel visibly shows only Combined. The reconstruction
+gate previously tested every raw legacy bit and incorrectly disabled final SR/RR.
+It now uses Film's resolved output passes, after obsolete-pass filtering and before
+adding reconstruction's internal motion vectors. Ignored flags are preserved in the
+file; actual EEVEE data passes still require native rendering.
+
+``eevee_dlss_pass_compatibility_test.py`` runs the hidden-flag fixture in SR and RR,
+plus real Depth and EEVEE Transparent output variants. All six cases passed, each
+rendering frames 1,2,1. Hidden flags permit 96 successful evaluations per mode;
+Depth/Transparent variants perform zero NGX evaluations and name the actual blocker.
+The character acceptance copy with the same five hidden flags also completed 32 SR
+and 32 RR evaluations. This repairs eligibility, not the earlier visual/order failures.
+Viewport and final-render reconstruction switches remain independent.

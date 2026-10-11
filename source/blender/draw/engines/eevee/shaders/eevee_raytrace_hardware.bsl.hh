@@ -4,14 +4,18 @@
 
 #pragma once
 #include "draw_view.bsl.hh"
+#include "eevee_bxdf_types.bsl.hh"
 #include "eevee_colorspace_lib.bsl.hh"
 #include "eevee_debug_shared.hh"
 #include "eevee_gbuffer_read.bsl.hh"
 #include "eevee_light_lib.bsl.hh"
 #include "eevee_lightprobe.bsl.hh"
+#include "eevee_ray_trace_screen_lib.bsl.hh"
 #include "eevee_raytrace_shared.hh"
 #include "eevee_reverse_z_lib.bsl.hh"
+#include "eevee_sampling_lib.bsl.hh"
 #include "eevee_uniform.bsl.hh"
+#include "gpu_shader_common_math.glsl"
 #include "gpu_shader_ray_query_lib.glsl"
 #include "gpu_shader_shared_exponent_lib.glsl"
 
@@ -36,7 +40,16 @@ struct Scene {
   [[storage(7, read)]] const HardwareRTTriangle (&rt_triangles)[];
   [[storage(8, read)]] const uint (&rt_material_map)[];
   [[storage(9, read)]] const HardwareRTMaterial (&rt_materials)[];
-  [[storage(10, read)]] const float4 (&rt_pixels)[];
+  [[storage(16, read)]] const HardwareRTUVAttribute (&rt_uv_attributes)[];
+  [[storage(17, read)]] const HardwareRTMaterial (&rt_closures)[];
+  [[sampler(20)]] sampler2DArray rt_images0;
+  [[sampler(21)]] sampler2DArray rt_images1;
+  [[sampler(22)]] sampler2DArray rt_images2;
+  [[sampler(23)]] sampler2DArray rt_images3;
+  [[sampler(24)]] sampler2DArray rt_images4;
+  [[sampler(25)]] sampler2DArray rt_images5;
+  [[sampler(26)]] sampler2DArray rt_images6;
+  [[sampler(27)]] sampler2DArray rt_images7;
 
   uint4 surface_key(GPURayQueryHit hit) const
   {
@@ -176,8 +189,19 @@ struct HitMaterial {
   float3 diffuse;
   float3 f0;
   float3 emission;
+  float3 transmission;
   float roughness;
+  float weight;
   bool supported;
+};
+
+struct HitContext {
+  float3 P, V, N, Ng;
+  float4x4 world_to_object;
+  float2 uv;
+  uint attribute_offset;
+  float3 barycentric;
+  bool front_face;
 };
 
 int wrap_texel(int v, int size, uint extension)
@@ -199,12 +223,31 @@ float4 material_texel([[resource_table]] const Scene &scene, uint4 info, int2 p)
     return float4(0.0f);
   }
   p = int2(wrap_texel(p.x, int(info.y), extension), wrap_texel(p.y, int(info.z), extension));
-  return scene.rt_pixels[info.x + uint(p.y) * info.y + uint(p.x)];
+  int3 coordinate = int3(p, int(info.x & 0xffffffu));
+  switch (info.x >> 24u) {
+    case 0u:
+      return texelFetch(scene.rt_images0, coordinate, 0);
+    case 1u:
+      return texelFetch(scene.rt_images1, coordinate, 0);
+    case 2u:
+      return texelFetch(scene.rt_images2, coordinate, 0);
+    case 3u:
+      return texelFetch(scene.rt_images3, coordinate, 0);
+    case 4u:
+      return texelFetch(scene.rt_images4, coordinate, 0);
+    case 5u:
+      return texelFetch(scene.rt_images5, coordinate, 0);
+    case 6u:
+      return texelFetch(scene.rt_images6, coordinate, 0);
+    case 7u:
+      return texelFetch(scene.rt_images7, coordinate, 0);
+  }
+  return float4(0);
 }
 
-float4 material_parameter([[resource_table]] const Scene &scene,
-                          HardwareRTParameter param,
-                          float2 uv)
+float4 material_parameter_leaf([[resource_table]] const Scene &scene,
+                               HardwareRTParameter param,
+                               float2 uv)
 {
   uint4 info = param.texture;
   if (info.y == 0u) {
@@ -229,35 +272,181 @@ float4 material_parameter([[resource_table]] const Scene &scene,
     return float4(value.a);
   }
   if ((info.w & 16u) != 0u) {
-    return float4((value.r + value.g + value.b) / 3.0f);
+    value.rgb *= value.a;
+  }
+  if ((info.w & 32u) != 0u && value.a != 0.0f && value.a != 1.0f) {
+    value.rgb /= value.a;
+  }
+  if ((info.w & 64u) != 0u) {
+    value.a = 1.0f;
   }
   return value;
 }
 
-HitMaterial hit_material([[resource_table]] const Scene &scene, GPURayQueryHit hit)
+float4 material_parameter([[resource_table]] const Scene &scene,
+                          HardwareRTParameter param,
+                          HitContext context)
+{
+  if (param.texture.y == 0u) {
+    return param.value;
+  }
+  float2 uv = float2(0.0f);
+  if (param.mapping.z == 0u) {
+    HardwareRTUVAttribute attr =
+        scene.rt_uv_attributes[context.attribute_offset + param.mapping.x];
+    float3 b = context.barycentric;
+    uv = attr.uv01.xy * b.x + attr.uv01.zw * b.y + attr.uv2.xy * b.z;
+  }
+  float4 coordinate = float4(uv, 0.0f, 1.0f);
+  uv = float2(dot(param.uv_row0, coordinate), dot(param.uv_row1, coordinate));
+  float4 value = param.color_transform * material_parameter_leaf(scene, param, uv) + param.value;
+  return param.mapping.y != 0u ? saturate(value) : value;
+}
+
+HardwareRTMaterial hit_material_data([[resource_table]] const Scene &scene, GPURayQueryHit hit)
 {
   HardwareRTInstance instance = scene.rt_instances[hit.instance];
   HardwareRTTriangle tri = scene.rt_triangles[instance.identity.y + hit.primitive];
-  HardwareRTMaterial data =
+  HardwareRTMaterial material =
       scene.rt_materials[scene.rt_material_map[instance.identity.w + tri.material.x]];
+  if (tri.material.y != 0u) {
+    material.properties.z = 0.0f;
+  }
+  return material;
+}
+
+HitMaterial hit_closure([[resource_table]] const Scene &scene,
+                        GPURayQueryHit hit,
+                        HardwareRTMaterial data,
+                        float3 P,
+                        float3 V)
+{
+  HardwareRTInstance instance = scene.rt_instances[hit.instance];
+  HardwareRTTriangle tri = scene.rt_triangles[instance.identity.y + hit.primitive];
   float3 b = float3(1.0f - hit.barycentric.x - hit.barycentric.y, hit.barycentric);
   float2 uv = float2(dot(b, float3(tri.corner0.w, tri.corner1.w, tri.corner2.w)),
                      dot(b, tri.uv_y.xyz));
   HitMaterial result;
-  result.N = normalize(transpose(to_float3x3(instance.world_to_object)) *
-                       (tri.corner0.xyz * b.x + tri.corner1.xyz * b.y + tri.corner2.xyz * b.z));
-  float3 base = clamp(material_parameter(scene, data.base_color, uv).rgb, 0.0f, 1.0f);
-  float metallic = saturate(material_parameter(scene, data.metallic, uv).x);
+  float3x3 normal_matrix = transpose(to_float3x3(instance.world_to_object));
+  float face_sign = hit.front_face ? 1.0f : -1.0f;
+  float3 Ni = (normalize(normal_matrix * tri.corner0.xyz) * b.x +
+               normalize(normal_matrix * tri.corner1.xyz) * b.y +
+               normalize(normal_matrix * tri.corner2.xyz) * b.z) *
+              face_sign;
+  result.N = normalize(Ni);
+  HitContext context;
+  context.P = P;
+  context.V = V;
+  context.N = result.N;
+  context.Ng = scene.normal(hit) * face_sign;
+  context.world_to_object = instance.world_to_object;
+  context.uv = uv;
+  context.attribute_offset = tri.attributes.x;
+  context.barycentric = b;
+  context.front_face = hit.front_face;
+  /* Fixed-size descriptors share the same bounded texture sampling path. */
+  float4 parameters[9];
+  for (uint parameter_index = 0u; parameter_index < 9u; parameter_index++) {
+    HardwareRTParameter parameter;
+    switch (parameter_index) {
+      case 0u:
+        parameter = data.weight;
+        break;
+      case 1u:
+        parameter = data.base_color;
+        break;
+      case 2u:
+        parameter = data.roughness;
+        break;
+      case 3u:
+        parameter = data.metallic;
+        break;
+      case 4u:
+        parameter = data.emission;
+        break;
+      case 5u:
+        parameter = data.emission_strength;
+        break;
+      case 6u:
+        parameter = data.normal_color;
+        break;
+      case 7u:
+        parameter = data.normal_strength;
+        break;
+      default:
+        parameter = data.alpha;
+        break;
+    }
+    parameters[parameter_index] = material_parameter(scene, parameter, context);
+  }
+  if (data.normal_info.x != 0u) {
+    float3 encoded = parameters[6].rgb;
+    float3 mapped = 2.0f * encoded - 1.0f;
+    /* Match Blender's legacy object/world normal-map convention exactly. */
+    if (data.normal_info.y == 3u || data.normal_info.y == 4u) {
+      mapped = float3(2.0f, -2.0f, -2.0f) * encoded - 1.0f;
+    }
+    if (data.normal_info.z != 0u) {
+      mapped.y = -mapped.y;
+    }
+    float strength = parameters[7].x;
+    if (data.normal_info.y == 0u) {
+      HardwareRTUVAttribute attr = scene.rt_uv_attributes[tri.attributes.x + data.normal_info.w];
+      float4 tangent = attr.tangent0 * b.x + attr.tangent1 * b.y + attr.tangent2 * b.z;
+      /* Raster attributes normalize each corner before interpolation, including nonuniform scale.
+       */
+      float3 T = normalize(normal_matrix * attr.tangent0.xyz) * b.x +
+                 normalize(normal_matrix * attr.tangent1.xyz) * b.y +
+                 normalize(normal_matrix * attr.tangent2.xyz) * b.z;
+      T *= face_sign;
+      float3 B = tangent.w * face_sign * cross(Ni, T);
+      B *= determinant(to_float3x3(instance.world_to_object)) < 0.0f ? -1.0f : 1.0f;
+      mapped.xy *= strength;
+      mapped.z = mix(1.0f, mapped.z, saturate(strength));
+      mapped = mapped.x * T + mapped.y * B + mapped.z * Ni;
+    }
+    else {
+      if (data.normal_info.y == 1u || data.normal_info.y == 3u) {
+        mapped = transpose(to_float3x3(instance.world_to_object)) * mapped;
+      }
+      mapped = mix(result.N, mapped, max(0.0f, strength));
+    }
+    if (dot(mapped, mapped) > 1e-12f && !any(isnan(mapped)) && !any(isinf(mapped))) {
+      result.N = normalize(mapped);
+    }
+  }
+  float3 base = clamp(parameters[1].rgb, 0.0f, 1.0f);
+  float metallic = saturate(parameters[3].x);
   float eta = max(1.0f, data.properties.x);
   float dielectric = square((eta - 1.0f) / (eta + 1.0f)) * data.properties.y * 2.0f;
   result.f0 = data.properties.w > 0.0f ? float3(0.0f) :
                                          mix(float3(saturate(dielectric)), base, metallic);
   result.diffuse = base * (1.0f - metallic) * (1.0f - result.f0);
-  result.roughness = clamp(material_parameter(scene, data.roughness, uv).x, 0.02f, 1.0f);
-  result.emission = max(float3(0.0f),
-                        material_parameter(scene, data.emission, uv).rgb *
-                            material_parameter(scene, data.emission_strength, uv).x);
+  result.roughness = clamp(parameters[2].x, 0.02f, 1.0f);
+  result.emission = max(float3(0.0f), parameters[4].rgb * parameters[5].x);
   result.supported = data.properties.z > 0.0f;
+  const float alpha = saturate(parameters[8].x);
+  const float weight = saturate(parameters[0].x);
+  result.transmission = weight * (data.properties.w == 2.0f ? base : float3(1.0f - alpha));
+  result.weight = data.properties.w == 2.0f ? 0.0f : weight * alpha;
+  return result;
+}
+
+HitMaterial hit_material([[resource_table]] const Scene &scene,
+                         GPURayQueryHit hit,
+                         float3 P,
+                         float3 V)
+{
+  HardwareRTMaterial root = hit_material_data(scene, hit);
+  HitMaterial result = hit_closure(scene, hit, root, P, V);
+  result.diffuse *= result.weight;
+  result.emission *= result.weight;
+  for (uint i = 1u; i < root.closures.y; i++) {
+    HitMaterial leaf = hit_closure(scene, hit, scene.rt_closures[root.closures.x + i], P, V);
+    result.diffuse += leaf.weight * leaf.diffuse;
+    result.emission += leaf.weight * leaf.emission;
+    result.transmission += leaf.transmission;
+  }
   return result;
 }
 
@@ -277,44 +466,52 @@ float ray_bias(float3 P)
   return max(0.0001f, reduce_max(abs(P)) * 0.000001f);
 }
 
-float shadow_visibility(
+/* Negative visibility requests native shading for this query, not an opaque blocker. */
+float3 shadow_visibility(
     [[resource_table]] const Scene &scene, float3 P, float3 N, LightData light, LightVector lv)
 {
   if (light.tilemap_index == LIGHT_NO_SHADOW) {
-    return 1.0f;
+    return float3(1.0f);
   }
   float bias = ray_bias(P);
   float3 origin = P + N * bias;
   float distance = is_sun_light(light.type) ? 1e6f : max(bias, lv.dist - bias);
-  /* Closest opaque queries let shadow linking skip blockers without an any-hit pipeline. */
   float tmin = bias;
+  float3 transmission = float3(1.0f);
   for (int i = 0; i < 64; i++) {
     GPURayQueryHit blocker = gpu_ray_query(scene.rt_scene, origin, lv.L, tmin, distance);
     if (!blocker.valid) {
-      return 1.0f;
+      return transmission;
     }
     uint4 linking = scene.rt_instances[blocker.instance].linking;
     if (linking.z == 0u && set_member(light.shadow_set_membership, linking.y)) {
-      return 0.0f;
+      if (hit_material_data(scene, blocker).properties.z == 0.0f) {
+        return float3(-1.0f);
+      }
+      HitMaterial material = hit_material(scene, blocker, origin + blocker.distance * lv.L, -lv.L);
+      transmission *= saturate(material.transmission);
+      if (reduce_max(transmission) < 1e-5f) {
+        return float3(0.0f);
+      }
     }
     tmin = blocker.distance + bias;
     if (tmin >= distance) {
-      return 1.0f;
+      return transmission;
     }
   }
-  return 0.0f;
+  return float3(-1.0f);
 }
 
-float3 direct_radiance([[resource_table]] const Scene &scene,
-                       [[resource_table]] const Lighting &lighting,
-                       [[resource_table]] const UtilityTexture &utility,
-                       GPURayQueryHit hit,
-                       HitMaterial mat,
-                       float3 P,
-                       float3 V,
-                       bool diffuse_only)
+float3 closure_direct_radiance([[resource_table]] const Scene &scene,
+                               [[resource_table]] const Lighting &lighting,
+                               [[resource_table]] const UtilityTexture &utility,
+                               GPURayQueryHit hit,
+                               HitMaterial mat,
+                               float3 P,
+                               float3 V,
+                               bool diffuse_only)
 {
-  float3 N = dot(mat.N, V) >= 0.0f ? mat.N : -mat.N;
+  float3 N = mat.N;
   float3 Ng = scene.normal(hit);
   Ng = dot(Ng, V) >= 0.0f ? Ng : -Ng;
   float4 spec_ltc = lut::ltc::sample_utility_tx(utility, saturate(dot(N, V)), mat.roughness);
@@ -338,7 +535,10 @@ float3 direct_radiance([[resource_table]] const Scene &scene,
     if (attenuation <= 1e-6f) {
       continue;
     }
-    attenuation *= shadow_visibility(scene, P, Ng, light, lv);
+    float3 visibility = shadow_visibility(scene, P, Ng, light, lv);
+    if (any(lessThan(visibility, float3(0.0f)))) {
+      return float3(-1.0f);
+    }
     if (attenuation == 0.0f) {
       continue;
     }
@@ -349,7 +549,7 @@ float3 direct_radiance([[resource_table]] const Scene &scene,
       reflected += fresnel * light.power[1] *
                    light_ltc(utility.utility_tx, light, N, V, lv, spec_ltc, vertices);
     }
-    radiance += light.color * attenuation * reflected;
+    radiance += light.color * attenuation * visibility * reflected;
   }
   return radiance;
 }
@@ -410,12 +610,75 @@ float4 irradiance_lookup([[resource_table]] const Scene &scene,
   float bias = max(ray_bias(P), ray_bias(probe.position.xyz));
   float3 delta = probe.position.xyz + probe.normal.xyz * bias - (P + N * bias);
   float distance = length(delta);
-  if (distance > 2.0f * bias &&
-      gpu_ray_query(scene.rt_scene, P + N * bias, delta / distance, bias, distance - bias).valid)
-  {
-    return float4(0.0f);
+  float3 transmission = float3(1.0f);
+  if (distance > 2.0f * bias) {
+    float tmin = bias;
+    bool complete = false;
+    for (int layer = 0; layer < 64; layer++) {
+      GPURayQueryHit hit = gpu_ray_query(
+          scene.rt_scene, P + N * bias, delta / distance, tmin, distance - bias);
+      if (!hit.valid) {
+        complete = true;
+        break;
+      }
+      if (hit_material_data(scene, hit).properties.z == 0.0f) {
+        return float4(0.0f); /* Unknown visibility uses the native probe fallback. */
+      }
+      HitMaterial material = hit_material(
+          scene, hit, P + N * bias + delta * (hit.distance / distance), -delta / distance);
+      transmission *= saturate(material.transmission);
+      if (reduce_max(transmission) < 1e-5f) {
+        return float4(0.0f);
+      }
+      tmin = hit.distance + bias;
+      if (tmin >= distance - bias) {
+        complete = true;
+        break;
+      }
+    }
+    if (!complete) {
+      return float4(0.0f);
+    }
   }
-  return cache.rt_irradiance[best];
+  return float4(cache.rt_irradiance[best].rgb * transmission, cache.rt_irradiance[best].w);
+}
+
+float3 material_radiance([[resource_table]] const Scene &scene,
+                         [[resource_table]] const Lighting &lighting,
+                         [[resource_table]] const UtilityTexture &utility,
+                         [[resource_table]] const IrradianceRead &cache,
+                         [[resource_table]] const LightprobeRenderData &lightprobes,
+                         GPURayQueryHit hit,
+                         float3 P,
+                         float3 V,
+                         float2 noise,
+                         bool diffuse_only,
+                         bool use_probe_fallback)
+{
+  HardwareRTMaterial root = hit_material_data(scene, hit);
+  float3 radiance = float3(0.0f);
+  for (uint i = 0u; i < root.closures.y; i++) {
+    HitMaterial leaf = hit_closure(scene, hit, scene.rt_closures[root.closures.x + i], P, V);
+    if (leaf.weight == 0.0f) {
+      continue;
+    }
+    float3 direct = closure_direct_radiance(
+        scene, lighting, utility, hit, leaf, P, V, diffuse_only);
+    if (any(lessThan(direct, float3(0.0f)))) {
+      return float3(-1.0f);
+    }
+    radiance += leaf.weight * direct;
+    float3 N = dot(leaf.N, V) >= 0.0f ? leaf.N : -leaf.N;
+    float4 E = irradiance_lookup(scene, cache, P, N);
+    if (E.w > 0.0f) {
+      radiance += leaf.weight * leaf.diffuse * E.rgb * (1.0f / 3.14159265359f);
+    }
+    else if (use_probe_fallback) {
+      LightProbeSample samp = lightprobes.load(noise, P, N, V);
+      radiance += leaf.weight * leaf.diffuse * lightprobes.eval_direction(samp, P, N, 1.0f);
+    }
+  }
+  return radiance;
 }
 
 struct IrradianceUpdate {
@@ -465,27 +728,45 @@ void irradiance_update([[resource_table]] IrradianceUpdate &srt,
     float3 direction = T * (sqrt(u) * cos(phi)) + B * (sqrt(u) * sin(phi)) + N * sqrt(1.0f - u);
     float bias = ray_bias(P);
     float3 origin = P + N * bias;
-    GPURayQueryHit hit = gpu_ray_query(scene.rt_scene, origin, direction, bias, 1e6f);
-    float3 radiance = float3(0.0f);
-    if (hit.valid) {
+    float3 radiance = float3(0.0f), throughput = float3(1.0f);
+    float tmin = bias;
+    bool complete = false;
+    for (uint layer = 0u; layer < 64u; layer++) {
+      GPURayQueryHit hit = gpu_ray_query(scene.rt_scene, origin, direction, tmin, 1e6f);
+      if (!hit.valid || hit_material_data(scene, hit).properties.z == 0.0f) {
+        LightProbeSample samp = lightprobes.load(float2(index, sample_index), P, N, N);
+        radiance += throughput * lightprobes.eval_direction(samp, P, direction, 0.0f);
+        complete = true;
+        break;
+      }
       float3 hit_P = origin + hit.distance * direction;
-      HitMaterial mat = hit_material(scene, hit);
-      float3 hit_N = dot(mat.N, direction) < 0.0f ? mat.N : -mat.N;
-      if (mat.supported) {
-        radiance = direct_radiance(scene, lighting, utility, hit, mat, hit_P, -direction, true);
-        /* Read only the previous iteration. E/pi is outgoing Lambertian radiance before albedo. */
-        radiance += mat.diffuse * irradiance_lookup(scene, cache, hit_P, hit_N).rgb *
-                    (1.0f / 3.14159265359f);
+      HitMaterial material = hit_material(scene, hit, hit_P, -direction);
+      float3 surface = material_radiance(scene,
+                                         lighting,
+                                         utility,
+                                         cache,
+                                         lightprobes,
+                                         hit,
+                                         hit_P,
+                                         -direction,
+                                         float2(index, sample_index),
+                                         true,
+                                         false);
+      if (any(lessThan(surface, float3(0.0f)))) {
+        LightProbeSample samp = lightprobes.load(float2(index, sample_index), P, N, N);
+        radiance += throughput * lightprobes.eval_direction(samp, P, direction, 0.0f);
+        complete = true;
+        break;
       }
-      else {
-        uint4 key = scene.surface_key(hit);
-        HardwareRadianceEntry entry = surface_cache.rt_cache[cache_slot(key)];
-        if (all(equal(entry.key, key)) && entry.radiance.w > 0.0f) {
-          radiance = entry.radiance.rgb;
-        }
+      radiance += throughput * surface;
+      throughput *= saturate(material.transmission);
+      if (reduce_max(throughput) < 1e-5f) {
+        complete = true;
+        break;
       }
+      tmin = hit.distance + ray_bias(hit_P);
     }
-    else {
+    if (!complete) {
       LightProbeSample samp = lightprobes.load(float2(index, sample_index), P, N, N);
       radiance = lightprobes.eval_direction(samp, P, direction, 0.0f);
     }
@@ -502,9 +783,11 @@ struct Trace {
   [[specialization_constant(0)]] int closure_index;
   [[storage(5, read)]] const uint (&tiles_coord_buf)[];
   [[sampler(0)]] sampler2DDepth depth_tx;
+  [[sampler(28)]] sampler2D radiance_front_tx;
   [[image(0, read, SFLOAT_16_16_16_16)]] const image2D ray_data_img;
   [[image(1, write, RAYTRACE_RAYTIME_FORMAT)]] image2D ray_time_img;
   [[image(2, write, RAYTRACE_RADIANCE_FORMAT)]] image2D ray_radiance_img;
+  [[image(3, write, UINT_8)]] uimage2D ray_path_img;
 };
 [[compute, local_size(RAYTRACE_GROUP_SIZE, RAYTRACE_GROUP_SIZE)]]
 void trace([[resource_table]] Trace &srt,
@@ -516,6 +799,7 @@ void trace([[resource_table]] Trace &srt,
            [[resource_table]] const gbuffer::Reader &reader,
            [[resource_table]] const LightprobeRenderData &lightprobes,
            [[resource_table]] const Uniform &uni,
+           [[resource_table]] const Sampling &sampling,
            [[resource_table]] const draw::View &views,
            [[work_group_id]] const uint3 group_id,
            [[local_invocation_id]] const uint3 local_id)
@@ -545,65 +829,147 @@ void trace([[resource_table]] Trace &srt,
   float bias = max(0.0001f, length(P - view.position()) * 0.00001f);
   float3 origin = P + direction * bias;
   float max_distance = abs(view.far() - view.near());
-  GPURayQueryHit hit = gpu_ray_query(scene.rt_scene, origin, direction, bias, max_distance);
+  /* Classify the actual raster surface. A material or coverage miss retains native tracing. */
+  float3 camera_origin = view.point_screen_to_world(float3(uv, 0.0f));
+  float primary_distance = length(P - camera_origin);
+  GPURayQueryHit primary = gpu_ray_query(scene.rt_scene,
+                                         camera_origin,
+                                         normalize(P - camera_origin),
+                                         0.0f,
+                                         primary_distance + bias * 2.0f);
+  if (!primary.valid || abs(primary.distance - primary_distance) > bias * 2.0f ||
+      hit_material_data(scene, primary).properties.z == 0.0f)
+  {
+    return;
+  }
   float roughness = closure_apparent_roughness_get(cl);
-  bool found = false;
-  float3 radiance = float3(0.0f);
+  float3 radiance = float3(0.0f), throughput = float3(1.0f);
   float hit_time = 10000.0f;
-  if (hit.valid && (hit.front_face || uni.raytrace_buf.use_backface_hit)) {
+  float tmin = bias;
+  bool terminated = false;
+  uint resolved_path = 1u;
+  for (uint layer = 0u; layer < 64u; layer++) {
+    GPURayQueryHit hit = gpu_ray_query(scene.rt_scene, origin, direction, tmin, max_distance);
+    if (!hit.valid) {
+      LightProbeSample samp = lightprobes.load(float2(texel), P, direction, V);
+      samp.volume_irradiance = spherical_harmonics::clamp_energy(
+          samp.volume_irradiance, uni.uniform_buf.clamp.surface_indirect);
+      radiance += throughput * lightprobes.eval_direction(samp, P, direction, roughness);
+      terminated = true;
+      break;
+    }
+    HardwareRTMaterial data = hit_material_data(scene, hit);
     float3 hit_P = origin + hit.distance * direction;
-    hit_time = length(hit_P - P);
-    HitMaterial material = hit_material(scene, hit);
-    if (material.supported) {
-      float3 hit_N = dot(material.N, direction) < 0.0f ? material.N : -material.N;
-      radiance = direct_radiance(
-          scene, lighting, utility, hit, material, hit_P, -direction, false);
-      float4 E = irradiance_lookup(scene, irradiance, hit_P, hit_N);
-      if (E.w > 0.0f) {
-        radiance += material.diffuse * E.rgb * (1.0f / 3.14159265359f);
+    if (data.properties.z == 0.0f) {
+      /* Keep the first unsupported surface as the blocker. Re-running an unconstrained
+       *
+       * screen ray can see past off-screen geometry and pick up an unrelated surface. */
+      float3 ndc = view.point_world_to_ndc(hit_P);
+      float2 hit_uv = ndc.xy * 0.5f + 0.5f;
+      float2 history_ndc = project_point(uni.raytrace_buf.history_persmat, hit_P).xy;
+      bool matched = all(lessThan(abs(ndc.xy), float2(1.0f))) &&
+                     all(lessThan(abs(history_ndc), float2(1.0f))) &&
+                     transform_point(view.viewmat, hit_P).z < 0.0f;
+      if (matched) {
+        int2 pixel = int2(hit_uv * uni.raytrace_buf.full_resolution);
+        float sample_depth = reverse_z::read(texelFetch(srt.depth_tx, pixel, 0).r);
+        float3 sample_P = view.point_screen_to_world(float3(hit_uv, sample_depth));
+        float3 near_P = view.point_screen_to_world(float3(hit_uv, 0.0f));
+        float tolerance = max(
+            ray_bias(hit_P) * 4.0f,
+            length(view.point_screen_to_world(float3(
+                       hit_uv + float2(uni.raytrace_buf.full_resolution_inv.x, 0), sample_depth)) -
+                   sample_P) *
+                2.0f);
+        GPURayQueryHit visible = gpu_ray_query(scene.rt_scene,
+                                               near_P,
+                                               normalize(sample_P - near_P),
+                                               0.0f,
+                                               length(sample_P - near_P) + tolerance);
+        matched = length(sample_P - hit_P) <= tolerance && visible.valid;
+        if (matched) {
+          matched = visible.instance == hit.instance &&
+                    abs(visible.distance - length(sample_P - near_P)) <= tolerance &&
+                    dot(scene.normal(visible), scene.normal(hit)) > 0.95f;
+        }
+      }
+      float3 native_radiance;
+      if (matched) {
+        ScreenTraceHitData screen_hit;
+        screen_hit.time = length(hit_P - P);
+        screen_hit.v_hit_P = transform_point(view.viewmat, hit_P);
+        native_radiance = raytrace_sample_screen(view,
+                                                 srt.radiance_front_tx,
+                                                 uni.raytrace_buf,
+                                                 screen_hit,
+                                                 roughness,
+                                                 history_ndc * 0.5f + 0.5f);
       }
       else {
-        /* An unallocated, occluded or not-yet-updated cache cell has explicit probe fallback. */
-        LightProbeSample samp = lightprobes.load(float2(texel), hit_P, hit_N, -direction);
-        radiance += material.diffuse * lightprobes.eval_direction(samp, hit_P, hit_N, 1.0f);
+        LightProbeSample samp = lightprobes.load(float2(texel), P, direction, V);
+        samp.volume_irradiance = spherical_harmonics::clamp_energy(
+            samp.volume_irradiance, uni.uniform_buf.clamp.surface_indirect);
+        native_radiance = lightprobes.eval_direction(samp, P, direction, roughness);
       }
-      found = true;
+      radiance += throughput * native_radiance;
+      hit_time = matched ? length(hit_P - P) : 10000.0f;
+      /* Native screen / off-screen probe: both keep denoising and no RR hit distance. */
+      resolved_path = matched ? 2u : 3u;
+      terminated = true;
+      break;
     }
-    float3 screen = view.point_world_to_screen(hit_P);
-    if (!found && screen.z >= 0.0f && screen.z <= 1.0f &&
-        all(greaterThanEqual(screen.xy, float2(0.0f))) && all(lessThan(screen.xy, float2(1.0f))))
-    {
-      int2 hit_texel = int2(screen.xy * float2(uni.raytrace_buf.full_resolution));
-      float raster_depth = reverse_z::read(texelFetch(srt.depth_tx, hit_texel, 0).r);
-      float3 raster_P = view.point_screen_to_world(float3(screen.xy, raster_depth));
-      float tolerance = max(0.001f, length(hit_P - view.position()) * 0.0001f);
-      const gbuffer::Layers hit_gbuf = reader.read_layers(hit_texel);
-      float3 Ng = hit_gbuf.header.geometry_normal(hit_gbuf.surface_N());
-      if (raster_depth < 1.0f && length(raster_P - hit_P) < tolerance &&
-          abs(dot(scene.normal(hit), Ng)) > 0.9f)
-      {
-        radiance = texelFetch(cache.rt_direct_tx, hit_texel, 0).rgb;
-        found = true;
+    HitMaterial material = hit_material(scene, hit, hit_P, -direction);
+    float3 transmission = saturate(material.transmission);
+    float continuation = reduce_max(transmission);
+    bool covered = true;
+    float surface_probability = 1.0f;
+    if (data.capability.y != 0u && continuation > 0.0f) {
+      float random = fract(sampling.rng_1D_get(SAMPLING_RAYTRACE_W) +
+                           float(random_hash(uint(texel.x) ^ (uint(texel.y) << 16u) ^ layer)) *
+                               (1.0f / 4294967296.0f));
+      covered = random >= continuation;
+      surface_probability = max(1e-6f, 1.0f - continuation);
+    }
+    if (covered) {
+      float3 surface = material_radiance(scene,
+                                         lighting,
+                                         utility,
+                                         irradiance,
+                                         lightprobes,
+                                         hit,
+                                         hit_P,
+                                         -direction,
+                                         float2(texel),
+                                         false,
+                                         true);
+      if (any(lessThan(surface, float3(0.0f)))) {
+        return;
       }
-    }
-    if (!found) {
-      uint4 key = scene.surface_key(hit);
-      HardwareRadianceEntry entry = cache.rt_cache[cache_slot(key)];
-      if (all(equal(entry.key, key)) && entry.radiance.a > 0.0f) {
-        radiance = entry.radiance.rgb;
-        found = true;
+      if (hit_time == 10000.0f && reduce_max(surface) > 0.0f) {
+        hit_time = length(hit_P - P);
       }
+      radiance += throughput * surface / surface_probability;
     }
-    if (found && !hit.front_face) {
-      radiance *= uni.raytrace_buf.backface_hit_scale;
+    if (data.capability.y != 0u) {
+      if (covered) {
+        terminated = true;
+        break;
+      }
+      throughput *= transmission / max(continuation, 1e-6f);
     }
+    else {
+      throughput *= transmission;
+    }
+    if (reduce_max(throughput) < 1e-5f) {
+      terminated = true;
+      break;
+    }
+    tmin = hit.distance + ray_bias(hit_P);
   }
-  if (!found) {
-    LightProbeSample samp = lightprobes.load(float2(texel), P, direction, V);
-    samp.volume_irradiance = spherical_harmonics::clamp_energy(
-        samp.volume_irradiance, uni.uniform_buf.clamp.surface_indirect);
-    radiance = lightprobes.eval_direction(samp, P, direction, roughness);
+  if (!terminated) {
+    return; /* Traversal budget exhausted: screen/probe fallback for this ray. */
   }
+  imageStore(srt.ray_path_img, texel, uint4(resolved_path));
   radiance = colorspace::brightness_clamp_max(radiance, uni.uniform_buf.clamp.surface_indirect);
   radiance = any(isnan(radiance)) || any(isinf(radiance)) ? float3(0.0f) : radiance;
   imageStore(srt.ray_time_img, texel, float4(hit_time));
@@ -631,7 +997,7 @@ void debug_view([[resource_table]] Debug &srt,
   float depth = reverse_z::read(texelFetch(srt.rt_depth_tx, texel, 0).r);
   float3 color = float3(0.0f);
   if (depth < 1.0f) {
-    color = float3(1.0f, 0.0f, 0.0f);
+    color = srt.rt_debug_mode == int(DEBUG_HARDWARE_RT_NORMAL_ERROR) ? float3(0) : float3(1, 0, 0);
     const ViewMatrices view = views.get(0);
     float2 uv = (float2(texel) + 0.5f) / float2(extent);
     float3 P = view.point_screen_to_world(float3(uv, depth));
@@ -645,6 +1011,26 @@ void debug_view([[resource_table]] Debug &srt,
         float3 N = scene.normal(hit);
         N = dot(N, P - origin) < 0.0f ? N : -N;
         color = irradiance_lookup(scene, irradiance, P, N).rgb * (1.0f / 3.14159265359f);
+      }
+      else if (srt.rt_debug_mode == int(DEBUG_HARDWARE_RT_SHADING_NORMAL)) {
+        color = hit_material(scene, hit, P, normalize(origin - P)).N * 0.5f + 0.5f;
+      }
+      else if (srt.rt_debug_mode == int(DEBUG_HARDWARE_RT_DIFFUSE_ALBEDO)) {
+        color = hit_material(scene, hit, P, normalize(origin - P)).diffuse;
+      }
+      else if (srt.rt_debug_mode == int(DEBUG_HARDWARE_RT_DIFFUSE_ERROR)) {
+        float3 reference = float3(0.0f);
+        gbuffer::Layers layers = reader.read_layers(texel);
+        for (int i = 0; i < 3; i++) {
+          if (layers.layer[i].type == CLOSURE_BSDF_DIFFUSE_ID) {
+            reference += layers.layer[i].color;
+          }
+        }
+        color = abs(hit_material(scene, hit, P, normalize(origin - P)).diffuse - reference);
+      }
+      else if (srt.rt_debug_mode == int(DEBUG_HARDWARE_RT_NORMAL_ERROR)) {
+        color = abs(hit_material(scene, hit, P, normalize(origin - P)).N -
+                    reader.read_layers(texel).surface_N());
       }
       else if (srt.rt_debug_mode == int(DEBUG_HARDWARE_RT_NORMAL)) {
         color = scene.normal(hit) * 0.5f + 0.5f;
@@ -666,7 +1052,7 @@ void debug_view([[resource_table]] Debug &srt,
       }
     }
   }
-  imageStore(srt.rt_debug_img, texel, float4(color, 1.0f));
+  imageStore(srt.rt_debug_img, texel, float4(color, depth < 1.0f ? 0.0f : 1.0f));
 }
 }  // namespace eevee::hardware
 

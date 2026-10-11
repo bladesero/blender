@@ -10,7 +10,9 @@
 
 namespace blender {
 struct Object;
-}
+struct Material;
+struct GPUMaterial;
+}  // namespace blender
 
 namespace blender::eevee {
 class Instance;
@@ -28,8 +30,12 @@ class DLSSViewportAdapter {
  public:
   ~DLSSViewportAdapter();
   bool update_history(const Instance &inst);
-  bool display(
-      Instance &inst, gpu::Texture *color, gpu::Texture *depth, int2 extent, float2 jitter);
+  bool display(Instance &inst,
+               gpu::Texture *color,
+               gpu::Texture *depth,
+               int2 extent,
+               int2 crop,
+               float2 jitter);
 };
 
 /** Window-independent conversion to Film's bottom-left scene-linear Combined texture. */
@@ -40,7 +46,7 @@ class DLSSRenderAdapter {
 
  public:
   ~DLSSRenderAdapter();
-  bool resolve(Instance &inst, gpu::Texture *color, int2 extent);
+  bool resolve(Instance &inst, gpu::Texture *color, int2 extent, int2 crop);
   gpu::Texture *texture()
   {
     return output_;
@@ -52,12 +58,15 @@ class DLSSModule {
   Instance &inst_;
   std::unique_ptr<gpu::DLSS> context_;
   std::string error_;
+  std::string last_report_;
+  Vector<std::string> reasons_, settings_reasons_;
   bool attempted_ = false;
   bool enabled_ = false;
   bool reset_ = true;
   bool has_result_ = false;
   int mode_ = 0;
   bool rr_ = false, requested_rr_ = false;
+  bool hardware_rr_requested_ = false;
   bool force_native_ = false, restart_ = false;
   bool unsupported_geometry_ = false;
   uint64_t blocked_update_ = 0, hardware_revision_ = 0;
@@ -65,15 +74,37 @@ class DLSSModule {
   draw::Texture normals_{"DLSS.NormalRoughness"}, hit_{"DLSS.SpecularHitDistance"};
   DLSSViewportAdapter viewport_adapter_;
   DLSSRenderAdapter render_adapter_;
+  draw::Texture sss_before_{"DLSS.SSSBefore"}, sss_guide_{"DLSS.SSSGuide"};
+  gpu::Shader *sss_shader_ = nullptr;
+  draw::PassSimple sss_pass_{"DLSS.SSSGuide"};
+  bool has_sss_guide_ = false;
   gpu::Shader *guide_shader_ = nullptr, *hit_shader_ = nullptr;
   draw::PassSimple guides_{"DLSS.Guides"}, hit_pass_{"DLSS.Hit"};
   int2 input_size_ = int2(0), output_size_ = int2(0);
+  int2 visible_size_ = int2(0), crop_ = int2(0);
   uint64_t frame_ = 0;
   draw::Texture color_{"DLSS.Color"};
+  draw::Texture color_before_transparency_{"DLSS.BeforeTransparency"};
+  draw::PassSimple before_transparency_pass_{"DLSS.BeforeTransparency"};
+  gpu::Shader *before_transparency_shader_ = nullptr;
+  bool has_before_transparency_ = false;
   draw::Texture depth_{"DLSS.Depth"};
   draw::Texture motion_{"DLSS.Motion"};
   draw::Texture output_{"DLSS.Output"};
   gpu::Shader *prepare_shader_ = nullptr;
+  gpu::Shader *blend_shader_ = nullptr;
+  gpu::Shader *integrate_shader_ = nullptr;
+  draw::PassSimple integrate_pass_{"DLSS.StaticIntegration"};
+  draw::Texture integrated_color_{"DLSS.IntegratedColor"};
+  uint64_t layered_update_ = 0;
+  uint64_t integrated_samples_ = 0, integrated_update_ = 0;
+  float integrated_time_ = 0.0f;
+  draw::PassSimple blend_pass_{"DLSS.Blended"};
+  draw::Texture blend_radiance_{"DLSS.BlendRadiance"},
+      blend_transmittance_{"DLSS.BlendTransmittance"};
+  draw::Texture composite_{"DLSS.Composite"};
+  uint64_t blend_samples_ = 0;
+  bool has_composite_ = false;
   draw::PassSimple prepare_{"DLSS.Prepare"};
   float2 last_jitter_ = float2(0.0f);
 
@@ -81,10 +112,19 @@ class DLSSModule {
   DLSSModule(Instance &inst) : inst_(inst) {}
   ~DLSSModule();
   void init(int2 extent, bool full_viewport);
+  void begin_sync()
+  {
+    reasons_ = settings_reasons_;
+  }
   void end_sync();
-  void unsupported_geometry() { unsupported_geometry_ = true; }
+  void unsupported_geometry()
+  {
+    unsupported_geometry_ = true;
+  }
   void reject(const char *reason);
   void report(const std::string &message);
+  void reason(const char *code, const std::string &detail);
+  void material_check(const Object *object, const blender::Material *material, GPUMaterial *gpu);
   void dump_guides();
   bool consume_restart()
   {
@@ -101,12 +141,19 @@ class DLSSModule {
     return enabled_ && rr_;
   }
   void begin_trace();
+  void capture_before_transparency(
+      draw::View &view, gpu::Texture *r, gpu::Texture *g, gpu::Texture *b, bool colored);
   bool restart_pending() const
   {
     return restart_;
   }
-  void capture_hit(draw::View &view, gpu::Texture *hit, int closure);
+  void capture_hit(draw::View &view, gpu::Texture *hit, gpu::Texture *path, int closure);
   void prepare_guides(draw::View &view);
+  bool subsurface_guide_needed() const;
+  void capture_subsurface(draw::View &view,
+                          gpu::Texture *direct,
+                          gpu::Texture *indirect,
+                          bool before);
   gpu::Texture *final_texture()
   {
     return has_result_ ? render_adapter_.texture() : nullptr;
@@ -121,6 +168,18 @@ class DLSSModule {
   }
   float2 jitter() const;
   void render(draw::View &view, gpu::Texture *color);
+  void finish();
+  void blend_layer(draw::View &view,
+                   gpu::Texture *r,
+                   gpu::Texture *g,
+                   gpu::Texture *b,
+                   bool colored,
+                   bool reset);
+  bool output_blended() const;
+  int2 output_size() const
+  {
+    return output_size_;
+  }
   void display();
 };
 }  // namespace blender::eevee

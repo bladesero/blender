@@ -28,7 +28,10 @@ struct RayTracingInstance {
 class AccelerationStructure {
  public:
   virtual ~AccelerationStructure() = default;
-  virtual bool build_mesh(Span<float3> positions, Span<uint3> triangles, bool allow_update) = 0;
+  virtual bool build_mesh(Span<float3> positions,
+                          Span<uint3> triangles,
+                          bool allow_update,
+                          bool opaque = true) = 0;
   virtual bool build_instances(Span<RayTracingInstance> instances) = 0;
   virtual void bind(int slot) = 0;
   virtual bool is_valid() const = 0;

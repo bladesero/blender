@@ -958,6 +958,7 @@ if(WITH_GTESTS)
     list(APPEND TEST_SRC
       tests/buffer_texture_test.cc
       tests/compute_test.cc
+      tests/dlss_test.cc
       tests/ray_query_test.cc
       tests/framebuffer_test.cc
       tests/immediate_test.cc

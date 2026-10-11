@@ -2,6 +2,8 @@
  *
  * SPDX-License-Identifier: GPL-2.0-or-later */
 
+#include <array>
+
 #include <atomic>
 #include <cstdlib>
 #include <filesystem>
@@ -271,14 +273,27 @@ bool VKDLSS::evaluate(const DLSSFrame &frame)
   if (NVSDK_NGX_FAILED(state->result.load())) {
     return false;
   }
+  auto valid_size = [](Texture *texture, int2 size) {
+    return texture && GPU_texture_width(texture) == size.x &&
+           GPU_texture_height(texture) == size.y;
+  };
+  if (!valid_size(frame.color, state->input_size) || !valid_size(frame.depth, state->input_size) ||
+      !valid_size(frame.motion, state->input_size) ||
+      !valid_size(frame.output, state->output_size))
+  {
+    state->result.store(NVSDK_NGX_Result_FAIL_InvalidParameter);
+    return false;
+  }
   /* Snapshot descriptors and constants: graph recording can run after the next CPU update. */
   const auto color_resource = resource(frame.color, false);
   const auto depth_resource = resource(frame.depth, false);
   const auto motion_resource = resource(frame.motion, false);
   const auto output_resource = resource(frame.output, true);
   const bool rr = state->mode == DLSSMode::RayReconstruction;
-  if (rr && (!frame.diffuse_albedo || !frame.specular_albedo || !frame.normal_roughness ||
-             !frame.specular_hit_distance))
+  if (rr && (!valid_size(frame.diffuse_albedo, state->input_size) ||
+             !valid_size(frame.specular_albedo, state->input_size) ||
+             !valid_size(frame.normal_roughness, state->input_size) ||
+             !valid_size(frame.specular_hit_distance, state->input_size)))
   {
     state->result.store(NVSDK_NGX_Result_FAIL_InvalidParameter);
     return false;
@@ -287,6 +302,36 @@ bool VKDLSS::evaluate(const DLSSFrame &frame)
   auto specular = rr ? resource(frame.specular_albedo, false) : NVSDK_NGX_Resource_VK{};
   auto normals = rr ? resource(frame.normal_roughness, false) : NVSDK_NGX_Resource_VK{};
   auto hit_distance = rr ? resource(frame.specular_hit_distance, false) : NVSDK_NGX_Resource_VK{};
+  std::array<NVSDK_NGX_Resource_VK, 7> auxiliary{};
+  const std::array<Texture *, 7> auxiliary_textures = {frame.color_before_transparency,
+                                                       frame.transparency_radiance,
+                                                       frame.transparency_opacity,
+                                                       frame.transparency_motion,
+                                                       frame.subsurface_guide,
+                                                       frame.disocclusion_mask,
+                                                       frame.bias_current_color_mask};
+  if (rr) {
+    const bool separate = frame.transparency_input == DLSSTransparencyInput::SeparateLayer;
+    if ((!separate && (frame.transparency_radiance || frame.transparency_opacity ||
+                       frame.transparency_motion)) ||
+        (separate && (!frame.transparency_radiance || !frame.transparency_opacity)) ||
+        (frame.color_before_transparency &&
+         GPU_texture_format(frame.color_before_transparency) != GPU_texture_format(frame.color)))
+    {
+      state->result.store(NVSDK_NGX_Result_FAIL_InvalidParameter);
+      return false;
+    }
+    for (int i = 0; i < auxiliary.size(); i++) {
+      Texture *texture = auxiliary_textures[i];
+      if (texture) {
+        if (!valid_size(texture, state->input_size)) {
+          state->result.store(NVSDK_NGX_Result_FAIL_InvalidParameter);
+          return false;
+        }
+        auxiliary[i] = resource(texture, false);
+      }
+    }
+  }
   bool reset = frame.reset;
   const float2 jitter = frame.jitter;
   render_graph::VKExternalComputeData node;
@@ -297,6 +342,13 @@ bool VKDLSS::evaluate(const DLSSFrame &frame)
   if (rr) {
     for (auto &r : {diffuse, specular, normals, hit_distance}) {
       node.inputs.append(r.Resource.ImageViewInfo.Image);
+    }
+  }
+  if (rr) {
+    for (const auto &r : auxiliary) {
+      if (r.Resource.ImageViewInfo.Image != VK_NULL_HANDLE) {
+        node.inputs.append(r.Resource.ImageViewInfo.Image);
+      }
     }
   }
   node.record = [=](VkCommandBuffer command) mutable {
@@ -385,10 +437,24 @@ bool VKDLSS::evaluate(const DLSSFrame &frame)
         re.pInSpecularAlbedo = &specular;
         re.pInNormals = &normals;
         re.pInSpecularHitDistance = &hit_distance;
+        auto optional = [&](int i) -> NVSDK_NGX_Resource_VK * {
+          return auxiliary[i].Resource.ImageViewInfo.Image != VK_NULL_HANDLE ? &auxiliary[i] :
+                                                                               nullptr;
+        };
+        re.pInColorBeforeTransparency = optional(0);
+        re.pInTransparencyLayer = optional(1);
+        re.pInTransparencyLayerOpacity = optional(2);
+        re.pInTransparencyLayerMvecs = optional(3);
+        re.pInScreenSpaceSubsurfaceScatteringGuide = optional(4);
+        re.pInDisocclusionMask = optional(5);
+        re.pInBiasCurrentColorMask = optional(6);
         re.InJitterOffsetX = jitter.x;
         re.InJitterOffsetY = jitter.y;
         re.InMVScaleX = re.InMVScaleY = 1.0f;
         re.InPreExposure = re.InExposureScale = 1.0f;
+        /* A reconstruction sample has a fixed logical timestep. In particular, final-render
+         * denoising must not depend on machine speed or on a zero/unspecified frame interval. */
+        re.InFrameTimeDeltaInMsec = 1000.0f / 60.0f;
         re.InRenderSubrectDimensions = evaluate.InRenderSubrectDimensions;
         re.InReset = reset;
         /* NGX uses row-major matrices. Blender stores columns. */

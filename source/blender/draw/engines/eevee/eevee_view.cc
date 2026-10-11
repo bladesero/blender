@@ -164,8 +164,13 @@ void ShadingView::render()
 
   inst_.ambient_occlusion.render_pass(render_view_);
 
-  inst_.pipelines.forward.render(
-      render_view_, rbufs.depth_tx, prepass_fb_, transparent_fb_, combined_fb_, extent_);
+  inst_.pipelines.forward.render(render_view_,
+                                 rbufs.depth_tx,
+                                 prepass_fb_,
+                                 transparent_fb_,
+                                 combined_fb_,
+                                 extent_,
+                                 !inst_.film.reconstruction().output_blended());
 
   inst_.lights.shape_display_draw(render_view_, combined_fb_);
 
@@ -179,10 +184,65 @@ void ShadingView::render()
   gpu::Texture *combined_final_tx = render_postfx(rbufs.combined_tx);
   inst_.film.accumulate(jitter_view_, combined_final_tx);
 
+  if (inst_.film.reconstruction().output_blended()) {
+    render_transparent_pass(rbufs);
+  }
+  inst_.film.reconstruction().finish();
   rbufs.release();
   postfx_tx_.release();
 
   GPU_debug_group_end();
+}
+
+void ShadingView::render_transparent_pass(RenderBuffers &rbufs)
+{
+  auto &reconstruction = inst_.film.reconstruction();
+  const int2 output_extent = reconstruction.output_size();
+  rbufs.release();
+  rbufs.acquire(output_extent);
+  const int samples = inst_.is_viewport() ? 4 : 1;
+  for (int i = 0; i < samples; i++) {
+    float2 jitter = inst_.is_viewport() ?
+                        float2((i & 1) ? 0.25f : -0.25f, (i & 2) ? 0.25f : -0.25f) :
+                        reconstruction.jitter();
+    float4x4 projection = main_view_.winmat();
+    float2 ndc = 2.0f * jitter / float2(output_extent);
+    window_translate_m4(projection.ptr(), projection.ptr(), UNPACK2(ndc));
+    render_view_.sync(main_view_.viewmat(), projection);
+    inst_.shadows.set_view(render_view_, output_extent);
+    inst_.lights.set_view(render_view_, output_extent);
+    inst_.hiz_buffer.set_source(&rbufs.depth_tx);
+    /* Screen-space raycast materials are rejected; forward shading uses the empty HiZ binding. */
+    inst_.uniform_data.data.push_update();
+    prepass_fb_.ensure(GPU_ATTACHMENT_TEXTURE(rbufs.depth_tx),
+                       GPU_ATTACHMENT_NONE,
+                       GPU_ATTACHMENT_NONE,
+                       GPU_ATTACHMENT_TEXTURE(rbufs.vector_tx));
+    GPU_debug_group_begin("DLSS.OutputTransparency.Depth");
+    prepass_fb_.bind();
+    prepass_fb_.clear_depth(inst_.film.depth.clear_value);
+    inst_.pipelines.deferred.reconstruction_depth(render_view_, rbufs.depth_tx);
+    GPU_debug_group_end();
+    GPU_debug_group_begin("DLSS.OutputTransparency.Shade");
+    inst_.pipelines.forward.reconstruction_layers(
+        render_view_, rbufs.depth_tx, transparent_fb_, output_extent);
+    auto &forward = inst_.pipelines.forward;
+    reconstruction.blend_layer(render_view_,
+                               forward.layer_r(),
+                               forward.layer_g(),
+                               forward.layer_b(),
+                               forward.use_colored_transparency(),
+                               inst_.is_viewport() && i == 0);
+    forward.release_layers();
+    GPU_debug_group_end();
+  }
+  if (G.debug & G_DEBUG_GPU) {
+    fprintf(stderr,
+            "DLSS Blended: output=%dx%d, spatial_samples=%d\n",
+            output_extent.x,
+            output_extent.y,
+            samples);
+  }
 }
 
 gpu::Texture *ShadingView::render_postfx(gpu::Texture *input_tx)
@@ -217,7 +277,7 @@ void ShadingView::update_view()
   float4x4 viewmat = main_view_.viewmat();
   float4x4 winmat = main_view_.winmat();
 
-  if (film.scaling_factor_get() > 1) {
+  if (film.scaling_factor_get() > 1 && !inst_.film.reconstruction().enabled()) {
     /* This whole section ensures that the render target pixel grid will match the film pixel grid.
      * Otherwise the weight computation inside the film accumulation will be wrong. */
 

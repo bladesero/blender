@@ -21,17 +21,22 @@ class RayTracingScene {
   struct GeometryKey {
     const Mesh *mesh;
     Vector<uint8_t> supported_materials;
+    Vector<uint32_t> material_layout;
     uint64_t hash() const
     {
       uint64_t value = get_default_hash(mesh);
       for (uint8_t supported : supported_materials) {
         value = value * 33 + supported;
       }
+      for (uint32_t material : material_layout) {
+        value = value * 33 + material;
+      }
       return value;
     }
     bool operator==(const GeometryKey &other) const
     {
-      return mesh == other.mesh && supported_materials == other.supported_materials;
+      return mesh == other.mesh && supported_materials == other.supported_materials &&
+             material_layout == other.material_layout;
     }
   };
   struct Geometry {
@@ -40,9 +45,11 @@ class RayTracingScene {
     Vector<uint3> triangles;
     Vector<float4> normals;
     Vector<HardwareRTTriangle> attributes;
+    Vector<HardwareRTUVAttribute> uv_attributes;
     uint64_t last_sync = 0;
     uint32_t generation = 1;
     uint32_t normal_offset = 0;
+    int invalid_tangents = 0;
   };
   struct InstanceRecord {
     Geometry *geometry = nullptr;
@@ -67,6 +74,7 @@ class RayTracingScene {
 
   draw::StorageArrayBuffer<HardwareRTTriangle, 16> triangle_data_ = {"RTTriangleData"};
   draw::StorageArrayBuffer<uint32_t, 16> material_map_ = {"RTMaterialMap"};
+  draw::StorageArrayBuffer<HardwareRTUVAttribute, 16> uv_data_ = {"RTUVAttributes"};
 
  public:
   RayTracingMaterials materials;
@@ -97,6 +105,7 @@ class RayTracingScene {
     pass.bind_ssbo("rt_normals", &triangle_normals_);
     pass.bind_ssbo("rt_triangles", &triangle_data_);
     pass.bind_ssbo("rt_material_map", &material_map_);
+    pass.bind_ssbo("rt_uv_attributes", &uv_data_);
     materials.bind_resources(pass);
   }
 };

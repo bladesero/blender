@@ -8,6 +8,7 @@
 #include "BKE_attribute.hh"
 #include "BKE_material.hh"
 #include "BKE_mesh.hh"
+#include "BKE_mesh_tangent.hh"
 #include "BKE_object.hh"
 #include "BLI_math_matrix.hh"
 #include "BLI_math_vector.hh"
@@ -56,7 +57,7 @@ void RayTracingScene::sync_mesh(const ObjectHandle &object, const MaterialArray 
   if (!mesh) {
     return;
   }
-  GeometryKey key{mesh, {}};
+  GeometryKey key{mesh, {}, {}};
   Vector<uint8_t> &supported = key.supported_materials;
   Vector<uint32_t> material_ids;
   for (const Material &material : materials.materials) {
@@ -69,18 +70,40 @@ void RayTracingScene::sync_mesh(const ObjectHandle &object, const MaterialArray 
     if (!mat) {
       mat = BKE_material_default_surface();
     }
-    const bool opaque = gpu && material.has_surface && !material.is_alpha_blend_transparent &&
+    const bool include = gpu && material.has_surface &&
+                         !GPU_material_flag_get(gpu, GPU_MATFLAG_HOLDOUT);
+    const bool opaque = include && !material.is_alpha_blend_transparent &&
                         !GPU_material_flag_get(
-                            gpu,
-                            eGPUMaterialFlag(GPU_MATFLAG_TRANSPARENT | GPU_MATFLAG_REFRACT |
-                                             GPU_MATFLAG_TRANSLUCENT | GPU_MATFLAG_HOLDOUT |
-                                             GPU_MATFLAG_SHADER_TO_RGBA)) &&
-                        !(GPU_material_has_displacement_output(gpu) && mat &&
-                          mat->displacement_method != MA_DISPLACEMENT_BUMP);
+                            gpu, eGPUMaterialFlag(GPU_MATFLAG_TRANSPARENT | GPU_MATFLAG_REFRACT));
+    const int64_t diagnostic_start = this->materials.diagnostics.size();
     material_ids.append(this->materials.sync(mat));
-    supported.append(opaque);
-    skipped_materials += !opaque;
+    for (int64_t i = diagnostic_start; i < this->materials.diagnostics.size(); i++) {
+      this->materials.diagnostics[i] = std::string(object.object->id.name + 2) + " / " +
+                                       this->materials.diagnostics[i];
+    }
+    const auto normal = this->materials.normal_info[material_ids.last()];
+    const auto required_uvs = this->materials.uv_names[material_ids.last()];
+    bool attributes_valid = true;
+    auto require_uv = [&](bool required, const std::string &name) {
+      const std::string resolved = name.empty() ? std::string(mesh->default_uv_map_name()) : name;
+      if (required && (resolved.empty() ||
+                       !mesh->attributes().lookup<float2>(resolved, bke::AttrDomain::Corner)))
+      {
+        attributes_valid = false;
+        this->materials.diagnostics.append(
+            std::string(object.object->id.name + 2) + " / " + std::string(mat->id.name + 2) +
+            ": missing UV map '" + (resolved.empty() ? "<active render UV>" : resolved) + "'");
+      }
+    };
+    require_uv(normal.enabled && normal.tangent, normal.tangent_uv);
+    for (const std::string &name : required_uvs) {
+      require_uv(true, name);
+    }
+    supported.append(include ? (attributes_valid ? (opaque ? 1 : 2) : 3) : 0);
+    skipped_materials += !include;
   }
+  resync_geometry_ |= this->materials.changed;
+  key.material_layout = material_ids;
   Geometry &geometry = *geometries_.lookup_or_add_cb(
       key, []() { return std::make_unique<Geometry>(); });
   if (geometry.last_sync != sync_id_) {
@@ -95,10 +118,50 @@ void RayTracingScene::sync_mesh(const ObjectHandle &object, const MaterialArray 
       const Span<int> faces = mesh->corner_tri_faces();
       Vector<uint3> triangles;
       Vector<HardwareRTTriangle> attributes;
+      Vector<HardwareRTUVAttribute> uv_attributes;
       const StringRefNull uv_name = mesh->default_uv_map_name();
       const auto uvs = mesh->attributes().lookup_or_default<float2>(
           uv_name, bke::AttrDomain::Corner, float2(0.0f));
       const Span<float3> shading_normals = mesh->corner_normals();
+      geometry.invalid_tangents = 0;
+      Map<std::string, Array<float4>> tangent_maps;
+      auto uv_values = [&](const std::string &name) {
+        return mesh->attributes().lookup_or_default<float2>(name.empty() ? StringRef(uv_name) :
+                                                                           StringRef(name),
+                                                            bke::AttrDomain::Corner,
+                                                            float2(0));
+      };
+      auto ensure_tangent = [&](const std::string &name) {
+        if (tangent_maps.contains(name)) {
+          return;
+        }
+        const VArraySpan<float2> coords(uv_values(name).varray);
+        const VArraySpan<bool> sharp(
+            mesh->attributes()
+                .lookup_or_default<bool>("sharp_face", bke::AttrDomain::Face, false)
+                .varray);
+        const Span<float2> uv_span = coords;
+        auto calculated = bke::mesh::calc_uv_tangents(mesh->vert_positions(),
+                                                      mesh->faces(),
+                                                      corners,
+                                                      corner_triangles,
+                                                      faces,
+                                                      sharp,
+                                                      mesh->vert_normals(),
+                                                      mesh->face_normals(),
+                                                      shading_normals,
+                                                      Span<Span<float2>>(&uv_span, 1));
+        tangent_maps.add(name, std::move(calculated[0]));
+      };
+      for (uint32_t id : material_ids) {
+        const auto &normal = this->materials.normal_info[id];
+        if (normal.enabled && normal.tangent) {
+          ensure_tangent(normal.tangent_uv);
+        }
+        for (const std::string &name : this->materials.uv_names[id]) {
+          ensure_tangent(name);
+        }
+      }
       for (const int i : corner_triangles.index_range()) {
         const int material = material_indices.varray[faces[i]];
         if (material < 0 || material >= supported.size() || !supported[material]) {
@@ -112,15 +175,49 @@ void RayTracingScene::sync_mesh(const ObjectHandle &object, const MaterialArray 
         attribute.corner2 = float4(shading_normals[tri.z], uvs.varray[tri.z].x);
         attribute.uv_y = float4(
             uvs.varray[tri.x].y, uvs.varray[tri.y].y, uvs.varray[tri.z].y, 0.0f);
-        attribute.material = uint4(material, 0, 0, 0);
+        const auto &names = this->materials.uv_names[material_ids[material]];
+        attribute.attributes = uint4(uv_attributes.size(), names.size(), 0, 0);
+        for (const std::string &name : names) {
+          const auto values = uv_values(name);
+          HardwareRTUVAttribute uv{};
+          uv.uv01 = float4(values.varray[tri.x], values.varray[tri.y]);
+          uv.uv2 = float4(values.varray[tri.z], 0, 0);
+          const auto &tangents = tangent_maps.lookup(name);
+          uv.tangent0 = tangents[tri.x];
+          uv.tangent1 = tangents[tri.y];
+          uv.tangent2 = tangents[tri.z];
+          uv_attributes.append(uv);
+        }
+        const auto &normal = this->materials.normal_info[material_ids[material]];
+        attribute.material = uint4(material, supported[material] == 3 ? 1 : 0, 0, 0);
+        for (const std::string &name : normal.tangent_uvs) {
+          const auto &t = tangent_maps.lookup(name);
+          const auto coords = uv_values(name);
+          const float2 du = coords.varray[tri.y] - coords.varray[tri.x];
+          const float2 dv = coords.varray[tri.z] - coords.varray[tri.x];
+          const float determinant = du.x * dv.y - du.y * dv.x;
+          bool valid = std::isfinite(determinant) && std::abs(determinant) >= 1e-12f;
+          for (int corner : {tri.x, tri.y, tri.z}) {
+            const float length = math::length_squared(t[corner].xyz());
+            valid &= std::isfinite(length) && length > 1e-12f;
+          }
+          geometry.invalid_tangents += !valid;
+          attribute.material.y |= !valid;
+        }
         attributes.append(attribute);
       }
-      if (attributes.size() != geometry.attributes.size() ||
+      const bool uv_changed = uv_attributes.size() != geometry.uv_attributes.size() ||
+                              (!uv_attributes.is_empty() &&
+                               memcmp(uv_attributes.data(),
+                                      geometry.uv_attributes.data(),
+                                      uv_attributes.size() * sizeof(HardwareRTUVAttribute)) != 0);
+      if (uv_changed || attributes.size() != geometry.attributes.size() ||
           (!attributes.is_empty() && memcmp(attributes.data(),
                                             geometry.attributes.data(),
                                             attributes.size() * sizeof(HardwareRTTriangle)) != 0))
       {
         geometry.attributes = std::move(attributes);
+        geometry.uv_attributes = std::move(uv_attributes);
         dirty_ = true;
         geometry.generation++;
       }
@@ -144,7 +241,14 @@ void RayTracingScene::sync_mesh(const ObjectHandle &object, const MaterialArray 
           geometry.blas = gpu::acceleration_structure_create();
         }
         if (!geometry.triangles.is_empty()) {
-          if (!geometry.blas || !geometry.blas->build_mesh(positions, geometry.triangles, true)) {
+          if (!geometry.blas || !geometry.blas->build_mesh(
+                                    positions,
+                                    geometry.triangles,
+                                    true,
+                                    std::all_of(supported.begin(), supported.end(), [](uint8_t v) {
+                                      return v == 1;
+                                    })))
+          {
             geometry.blas.reset();
             failed_ = true;
             return;
@@ -153,6 +257,11 @@ void RayTracingScene::sync_mesh(const ObjectHandle &object, const MaterialArray 
         }
       }
     }
+  }
+  skipped_materials += geometry.invalid_tangents != 0;
+  if (geometry.invalid_tangents) {
+    this->materials.diagnostics.append(std::string(object.object->id.name + 2) +
+                                       ": degenerate normal-map tangent");
   }
   if (geometry.triangles.is_empty() || !geometry.blas || !geometry.blas->is_valid()) {
     return;
@@ -222,12 +331,17 @@ void RayTracingScene::end_sync()
   }
   Vector<float4> normals;
   Vector<HardwareRTTriangle> attributes;
+  Vector<HardwareRTUVAttribute> uv_attributes;
   Vector<uint32_t> material_map;
   memory_bytes = 0;
   for (const auto &geometry : geometries_.values()) {
     geometry->normal_offset = normals.size();
     normals.extend(geometry->normals);
-    attributes.extend(geometry->attributes);
+    for (HardwareRTTriangle triangle : geometry->attributes) {
+      triangle.attributes.x += uv_attributes.size();
+      attributes.append(triangle);
+    }
+    uv_attributes.extend(geometry->uv_attributes);
     if (geometry->blas) {
       memory_bytes += geometry->blas->memory_usage();
     }
@@ -236,6 +350,7 @@ void RayTracingScene::end_sync()
   const size_t max_storage = GPU_max_storage_buffer_size();
   if (normals.size() > (1u << 26) || memory_bytes > (size_t(2) << 30) ||
       attributes.size() * sizeof(HardwareRTTriangle) > max_storage ||
+      uv_attributes.size() * sizeof(HardwareRTUVAttribute) > max_storage ||
       sorted.size() * sizeof(HardwareRTInstance) > max_storage)
   {
     failed_ = true;
@@ -247,6 +362,10 @@ void RayTracingScene::end_sync()
     triangle_normals_[i] = normals[i];
   }
   triangle_data_.resize(std::max<int64_t>(1, attributes.size()));
+  uv_data_.resize(std::max<int64_t>(1, uv_attributes.size()));
+  for (int i : uv_attributes.index_range()) {
+    uv_data_[i] = uv_attributes[i];
+  }
   for (int i : attributes.index_range()) {
     triangle_data_[i] = attributes[i];
   }
@@ -272,11 +391,13 @@ void RayTracingScene::end_sync()
   }
   material_map_.push_update();
   triangle_data_.push_update();
+  uv_data_.push_update();
   instance_data_.push_update();
   triangle_normals_.push_update();
   if (!GPU_storagebuf_ensure_allocated(instance_data_) ||
       !GPU_storagebuf_ensure_allocated(triangle_normals_) ||
       !GPU_storagebuf_ensure_allocated(triangle_data_) ||
+      !GPU_storagebuf_ensure_allocated(uv_data_) ||
       !GPU_storagebuf_ensure_allocated(material_map_))
   {
     failed_ = true;
@@ -562,12 +683,14 @@ void HardwareRayTracing::end_sync()
     hardware_notice(inst_, "Hardware RT scene build failed: using screen tracing");
   }
   if (scene.materials.unsupported) {
-    hardware_notice(inst_, "Hardware RT: {} materials use cached/probe lighting (outside PBR subset)",
-                      scene.materials.unsupported);
+    hardware_notice(inst_,
+                    "Hardware RT: {} materials use cached/probe lighting (outside PBR subset)",
+                    scene.materials.unsupported);
   }
   if (scene.skipped_materials) {
-    hardware_notice(inst_, "Hardware RT: {} unsupported material slots excluded",
-                      scene.skipped_materials);
+    hardware_notice(inst_,
+                    "Hardware RT: {} unsupported material or geometry entries require fallback",
+                    scene.skipped_materials);
   }
 }
 
@@ -654,6 +777,10 @@ void HardwareRayTracing::debug_draw(draw::View &view, gpu::Texture *combined)
                        DEBUG_HARDWARE_RT_DISTANCE,
                        DEBUG_HARDWARE_RT_INSTANCE,
                        DEBUG_HARDWARE_RT_COVERAGE,
+                       DEBUG_HARDWARE_RT_SHADING_NORMAL,
+                       DEBUG_HARDWARE_RT_NORMAL_ERROR,
+                       DEBUG_HARDWARE_RT_DIFFUSE_ALBEDO,
+                       DEBUG_HARDWARE_RT_DIFFUSE_ERROR,
                        DEBUG_HARDWARE_RT_IRRADIANCE))
   {
     return;
@@ -677,9 +804,10 @@ void HardwareRayTracing::debug_draw(draw::View &view, gpu::Texture *combined)
   pass.dispatch(math::divide_ceil(inst_.film.render_extent_get(), int2(8)));
   pass.barrier(GPU_BARRIER_TEXTURE_FETCH | GPU_BARRIER_SHADER_IMAGE_ACCESS);
   inst_.manager->submit(pass, view);
-  hardware_notice(inst_, "Hardware RT: {} BLAS builds, {} TLAS builds, {} MiB scene; red = uncovered",
-                    scene.blas_build_count,
-                    scene.tlas_build_count,
-                    scene.memory_bytes >> 20);
+  hardware_notice(inst_,
+                  "Hardware RT: {} BLAS builds, {} TLAS builds, {} MiB scene; red = uncovered",
+                  scene.blas_build_count,
+                  scene.tlas_build_count,
+                  scene.memory_bytes >> 20);
 }
 }  // namespace blender::eevee

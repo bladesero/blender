@@ -25,6 +25,26 @@ test_cancel = '--complete' not in sys.argv
 scene.eevee.dlss_render_quality = 'QUALITY'
 scene.eevee.dlss_render_rr = '--sr' not in sys.argv
 scene.eevee.taa_render_samples = 64 if test_cancel else 32
+if '--blended' in sys.argv:
+    scene.eevee.dlss_render_rr = False
+    scene.eevee.use_overscan = True
+    scene.eevee.overscan_size = 3
+    material = bpy.data.materials['PBR0']
+    material.surface_render_method = 'BLENDED'
+    material.node_tree.nodes['Principled BSDF'].inputs['Alpha'].default_value = 0.4
+if '--normal' in sys.argv:
+    tree = bpy.data.materials['PBR0'].node_tree
+    normal = tree.nodes.new('ShaderNodeNormalMap')
+    normal.inputs['Color'].default_value = (0.7, 0.5, 0.95, 1)
+    tree.links.new(normal.outputs['Normal'], tree.nodes['Principled BSDF'].inputs['Normal'])
+if '--mixed' in sys.argv:
+    bpy.data.materials['PBR0'].node_tree.nodes['Principled BSDF'].inputs['Subsurface Weight'].default_value = 0.8
+    tree = bpy.data.materials['PBR1'].node_tree
+    glass = tree.nodes.new('ShaderNodeBsdfGlass')
+    tree.links.new(glass.outputs[0], tree.nodes['Material Output'].inputs['Surface'])
+    material = bpy.data.materials['PBR3']
+    material.surface_render_method = 'BLENDED'
+    material.node_tree.nodes['Principled BSDF'].inputs['Alpha'].default_value = 0.4
 scene.render.image_settings.file_format = 'PNG'
 scene.render.filepath = str(output / 'cancelled.png')
 bpy.context.preferences.view.render_display_type = 'NONE'

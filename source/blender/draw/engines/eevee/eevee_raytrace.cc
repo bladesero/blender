@@ -9,6 +9,7 @@
  */
 
 #include "GPU_debug.hh"
+#include "MEM_guardedalloc.h"
 
 #include "eevee_instance.hh"
 
@@ -63,10 +64,11 @@ void RayTraceModule::init()
   const SceneEEVEE &sce_eevee = inst_.scene->eevee;
 
   hardware.init();
+  ray_path_tx_.ensure_2d(gpu::TextureFormat::UINT_8, int2(1));
+  data_.use_rr = inst_.film.reconstruction().ray_reconstruction();
   ray_tracing_options_ = sce_eevee.ray_tracing_options;
   if (inst_.film.reconstruction().ray_reconstruction()) {
     ray_tracing_options_.resolution_scale = 1;
-    ray_tracing_options_.flag &= ~RAYTRACE_EEVEE_USE_DENOISE;
   }
   if ((sce_eevee.flag & SCE_EEVEE_FAST_GI_ENABLED) == 0 || hardware.enabled()) {
     ray_tracing_options_.trace_max_roughness = 1.0f;
@@ -182,6 +184,7 @@ void RayTraceModule::sync()
     pass.specialize_constant(sh, "closure_index", &data_.closure_index);
     pass.shader_set(sh);
     pass.push_constant("hardware_opaque_trace", &hardware.active);
+    pass.bind_image("ray_path_img", &ray_path_tx_);
     pass.bind_ssbo("tiles_coord_buf", &raytrace_tracing_tiles_buf_);
     pass.bind_image("ray_data_img", &ray_data_tx_);
     pass.bind_image("ray_time_img", &ray_time_tx_);
@@ -207,12 +210,15 @@ void RayTraceModule::sync()
     gpu::Shader *sh = hardware.trace_shader();
     pass.specialize_constant(sh, "closure_index", &data_.closure_index);
     pass.shader_set(sh);
+    pass.bind_image("ray_path_img", &ray_path_tx_);
     pass.bind_ssbo("tiles_coord_buf", &raytrace_tracing_tiles_buf_);
     pass.bind_image("ray_data_img", &ray_data_tx_);
     pass.bind_image("ray_time_img", &ray_time_tx_);
     pass.bind_image("ray_radiance_img", &ray_radiance_tx_);
     pass.bind_texture("depth_tx", &depth_tx);
+    pass.bind_texture("radiance_front_tx", &screen_radiance_front_tx_);
     hardware.bind_resources(pass);
+    pass.bind_resources(inst_.sampling);
     inst_.lights.bind_raytrace_resources(pass);
     pass.bind_ubo("rt_sunlight", &inst_.world.sunlight);
     pass.bind_texture(RBUFS_UTILITY_TEX_SLOT, inst_.pipelines.utility_tx);
@@ -259,6 +265,7 @@ void RayTraceModule::sync()
     pass.bind_image("ray_radiance_img", &ray_radiance_tx_);
     pass.bind_image("out_radiance_img", &denoised_spatial_tx_);
     pass.bind_image("out_variance_img", &hit_variance_tx_);
+    pass.bind_image("ray_path_img", &ray_path_tx_);
     pass.bind_image("out_hit_depth_img", &hit_depth_tx_);
     pass.bind_image("tile_mask_img", &tile_raytrace_denoise_tx_);
     pass.bind_resources(inst_.uniform_data);
@@ -706,13 +713,21 @@ RayTraceResultTexture RayTraceModule::trace(int closure_index,
                                      use_temporal_denoise;
 
   if (inst_.film.reconstruction().ray_reconstruction() && (G.debug & G_DEBUG_GPU) &&
-      inst_.sampling.sample_index() == 1) {
-    fprintf(stderr, "DLSS RR tracing: closure=%d, scale=%d, spatial=%d, temporal=%d, bilateral=%d\n",
-            closure_index, resolution_scale, int(use_spatial_denoise),
-            int(use_temporal_denoise), int(use_bilateral_denoise));
+      inst_.sampling.sample_index() == 1)
+  {
+    fprintf(stderr,
+            "DLSS RR tracing: closure=%d, scale=%d, spatial=%d, temporal=%d, bilateral=%d\n",
+            closure_index,
+            resolution_scale,
+            int(use_spatial_denoise),
+            int(use_temporal_denoise),
+            int(use_bilateral_denoise));
   }
 
   eGPUTextureUsage usage_rw = GPU_TEXTURE_USAGE_SHADER_READ | GPU_TEXTURE_USAGE_SHADER_WRITE;
+  if (data_.use_rr && (G.debug & G_DEBUG_GPU)) {
+    usage_rw |= GPU_TEXTURE_USAGE_HOST_READ;
+  }
 
   GPU_debug_group_begin("Raytracing");
 
@@ -740,7 +755,12 @@ RayTraceResultTexture RayTraceModule::trace(int closure_index,
 
   {
     /* Tracing rays. */
+    ray_path_tx_.ensure_2d(gpu::TextureFormat::UINT_8, tracing_res);
+    ray_path_tx_.clear(uint4(0));
     ray_data_tx_.acquire_2d(tracing_res, gpu::TextureFormat::SFLOAT_16_16_16_16);
+    if (data_.use_rr && (G.debug & G_DEBUG_GPU) && inst_.sampling.sample_index() == 1) {
+      ray_data_tx_.clear(float4(0));
+    }
     ray_time_tx_.acquire_2d(tracing_res, gpu::TextureFormat::RAYTRACE_RAYTIME_FORMAT);
     ray_radiance_tx_.acquire_2d(tracing_res, gpu::TextureFormat::RAYTRACE_RADIANCE_FORMAT);
 
@@ -749,10 +769,10 @@ RayTraceResultTexture RayTraceModule::trace(int closure_index,
       if (inst_.planar_probes.enabled()) {
         inst_.manager->submit(trace_planar_ps_, render_view);
       }
-      inst_.manager->submit(trace_screen_ps_, render_view);
       if (hardware.active) {
         inst_.manager->submit(trace_hardware_ps_, render_view);
       }
+      inst_.manager->submit(trace_screen_ps_, render_view);
     }
     else {
       inst_.manager->submit(trace_fallback_ps_, render_view);
@@ -760,15 +780,59 @@ RayTraceResultTexture RayTraceModule::trace(int closure_index,
   }
 
   RayTraceResultTexture result;
+  Vector<int> rr_check_pixels;
+  Vector<float3> rr_check_colors;
+
+  if (data_.use_rr && (G.debug & G_DEBUG_GPU) && inst_.sampling.sample_index() == 1) {
+    auto *paths = static_cast<uint8_t *>(GPU_texture_read(ray_path_tx_, GPU_DATA_UBYTE, 0));
+    auto *rays = static_cast<float4 *>(GPU_texture_read(ray_data_tx_, GPU_DATA_FLOAT, 0));
+    int hardware_rays = 0, native_rays = 0, matched_rays = 0, approximate_rays = 0;
+    if (paths && rays) {
+      for (int i = 0; i < tracing_res.x * tracing_res.y; i++) {
+        if (rays[i].w != 0.0f) {
+          paths[i] == 1 ? hardware_rays++ : native_rays++;
+          matched_rays += paths[i] == 2;
+          approximate_rays += paths[i] == 3;
+        }
+      }
+      fprintf(stderr,
+              "DLSS RR routes: closure=%d hardware=%d native=%d matched=%d approximate=%d; "
+              "hardware denoise bypass\n",
+              closure_index,
+              hardware_rays,
+              native_rays,
+              matched_rays,
+              approximate_rays);
+    }
+    if (paths) {
+      if (hardware_rays) {
+        auto *raw = static_cast<float3 *>(GPU_texture_read(ray_radiance_tx_, GPU_DATA_FLOAT, 0));
+        if (raw) {
+          for (int i = 0; i < tracing_res.x * tracing_res.y; i++) {
+            if (paths[i] == 1) {
+              rr_check_pixels.append(i);
+              rr_check_colors.append(raw[i]);
+            }
+          }
+          MEM_delete(raw);
+        }
+      }
+      MEM_delete(paths);
+    }
+    if (rays) {
+      MEM_delete(rays);
+    }
+  }
 
   /* Spatial denoise pass is required to resolve at least one ray per pixel. */
   {
     denoise_buf->denoised_spatial_tx.acquire_2d(extent,
-                                                gpu::TextureFormat::RAYTRACE_RADIANCE_FORMAT);
+                                             gpu::TextureFormat::RAYTRACE_RADIANCE_FORMAT,
+                                             usage_rw);
     hit_variance_tx_.acquire_2d(use_temporal_denoise ? extent : int2(1),
-                                gpu::TextureFormat::RAYTRACE_VARIANCE_FORMAT);
+                               gpu::TextureFormat::RAYTRACE_VARIANCE_FORMAT);
     hit_depth_tx_.acquire_2d(use_temporal_denoise ? extent : int2(1),
-                             gpu::TextureFormat::SFLOAT_32);
+                            gpu::TextureFormat::SFLOAT_32);
     denoised_spatial_tx_ = denoise_buf->denoised_spatial_tx;
 
     inst_.manager->submit(denoise_spatial_ps_, render_view);
@@ -776,7 +840,7 @@ RayTraceResultTexture RayTraceModule::trace(int closure_index,
     result = {denoise_buf->denoised_spatial_tx};
   }
 
-  inst_.film.reconstruction().capture_hit(render_view, ray_time_tx_, closure_index);
+  inst_.film.reconstruction().capture_hit(render_view, ray_time_tx_, ray_path_tx_, closure_index);
   ray_data_tx_.release();
   ray_time_tx_.release();
   ray_radiance_tx_.release();
@@ -785,16 +849,17 @@ RayTraceResultTexture RayTraceModule::trace(int closure_index,
     denoise_buf->denoised_temporal_tx.acquire_2d(
         extent, gpu::TextureFormat::RAYTRACE_RADIANCE_FORMAT, usage_rw);
 
-    int2 variance_size = use_bilateral_denoise ? extent : int2(1);
+    /* RR ownership shares the signed variance channel, including without bilateral filtering. */
+    int2 variance_size = (use_bilateral_denoise || data_.use_rr) ? extent : int2(1);
     gpu::TextureFormat variance_format = gpu::TextureFormat::RAYTRACE_VARIANCE_FORMAT;
 
     denoise_variance_tx_.acquire_2d(variance_size, variance_format, usage_rw);
     denoise_buf->variance_history_tx.acquire_2d(variance_size, variance_format, usage_rw);
 
     denoise_buf->tilemask_history_tx.ensure_2d_array(gpu::TextureFormat::RAYTRACE_TILEMASK_FORMAT,
-                                                     tile_raytrace_denoise_tx_.size().xy(),
-                                                     tile_raytrace_denoise_tx_.size().z,
-                                                     usage_rw);
+                                                   tile_raytrace_denoise_tx_.size().xy(),
+                                                   tile_raytrace_denoise_tx_.size().z,
+                                                   usage_rw);
 
     if (denoise_buf->radiance_history_tx.acquire_2d(
             extent, gpu::TextureFormat::RAYTRACE_RADIANCE_FORMAT, usage_rw) ||
@@ -802,6 +867,10 @@ RayTraceResultTexture RayTraceModule::trace(int closure_index,
     {
       /* If viewport resolution changes, do not try to use history. */
       denoise_buf->tilemask_history_tx.clear(uint4(0u));
+      denoise_buf->radiance_history_tx.clear(float4(0));
+      denoise_buf->variance_history_tx.clear(float4(0));
+      data_.denoise_history_persmat = render_view.persmat();
+      inst_.uniform_data.raytrace.push_update();
     }
 
     radiance_history_tx_ = denoise_buf->radiance_history_tx;
@@ -848,11 +917,33 @@ RayTraceResultTexture RayTraceModule::trace(int closure_index,
   }
   else if (use_temporal_denoise) {
     /* Not referenced by result anymore. */
+    if (data_.use_rr) {
+      TextureFromPool::swap(denoise_variance_tx_, denoise_buf->variance_history_tx);
+    }
     denoise_buf->variance_history_tx.retain();
   }
 
   denoise_variance_tx_.release();
 
+  if (!rr_check_pixels.is_empty()) {
+    auto *filtered = static_cast<float3 *>(GPU_texture_read(result, GPU_DATA_FLOAT, 0));
+    if (filtered) {
+      float error = 0.0f;
+      for (int i : rr_check_pixels.index_range()) {
+        for (int channel = 0; channel < 3; channel++) {
+          error = std::max(
+              error,
+              std::abs(filtered[rr_check_pixels[i]][channel] - rr_check_colors[i][channel]));
+        }
+      }
+      fprintf(stderr,
+              "DLSS RR denoise verification: closure=%d pixels=%lld max_error=%.9g\n",
+              closure_index,
+              (long long)rr_check_pixels.size(),
+              double(error));
+      MEM_delete(filtered);
+    }
+  }
   GPU_debug_group_end();
 
   return result;

@@ -625,12 +625,38 @@ bool ForwardPipeline::use_colored_transparency() const
   return has_colored_transparency_ || has_holdout_;
 }
 
+void ForwardPipeline::reconstruction_layers(View &view,
+                                            gpu::Texture *depth,
+                                            Framebuffer &framebuffer,
+                                            int2 extent)
+{
+  inst_.shadows.render(view, extent);
+  inst_.volume_probes.set_view(view);
+  inst_.sphere_probes.set_view(view);
+  transp_buffer_.acquire(extent, use_colored_transparency());
+  if (use_colored_transparency()) {
+    framebuffer.ensure(GPU_ATTACHMENT_TEXTURE(depth),
+                       GPU_ATTACHMENT_TEXTURE(transp_buffer_.r_channel_tx),
+                       GPU_ATTACHMENT_TEXTURE(transp_buffer_.g_channel_tx),
+                       GPU_ATTACHMENT_TEXTURE(transp_buffer_.b_channel_tx),
+                       GPU_ATTACHMENT_TEXTURE(transp_buffer_.a_channel_tx));
+  }
+  else {
+    framebuffer.ensure(GPU_ATTACHMENT_TEXTURE(depth),
+                       GPU_ATTACHMENT_TEXTURE(transp_buffer_.r_channel_tx));
+  }
+  framebuffer.bind();
+  framebuffer.clear_color(use_colored_transparency() ? float4(0, 1, 0, 0) : float4(0, 0, 0, 1));
+  inst_.manager->submit(transparent_ps_, view);
+}
+
 void ForwardPipeline::render(View &view,
                              gpu::Texture *depth_tx,
                              Framebuffer &prepass_fb,
                              Framebuffer &transparent_fb,
                              Framebuffer &combined_fb,
-                             int2 extent)
+                             int2 extent,
+                             bool draw_transparent)
 {
   /* We need to ensure the pipeline runs if outputting the transparent render-pass (see #154895).
    */
@@ -690,7 +716,17 @@ void ForwardPipeline::render(View &view,
   GPU_debug_group_end();
 
   if (has_transparent_) {
-    inst_.manager->submit(transparent_ps_, view);
+    /* Include forward opaque surfaces, already accumulated in the layer targets, in the guide.
+     * Capture before drawing transparency; resolve below still composites it exactly once. */
+    inst_.film.reconstruction().capture_before_transparency(view,
+                                                            transp_buffer_.r_channel_tx,
+                                                            transp_buffer_.g_channel_tx,
+                                                            transp_buffer_.b_channel_tx,
+                                                            use_colored_transparency());
+    if (draw_transparent) {
+      transparent_fb.bind();
+      inst_.manager->submit(transparent_ps_, view);
+    }
   }
 
   combined_fb.bind();
@@ -1120,7 +1156,8 @@ gpu::Texture *DeferredLayer::render(View &render_view,
     gpu::Texture *direct[] = {
         direct_radiance_txs_[0], direct_radiance_txs_[1], direct_radiance_txs_[2]};
     if (!inst_.raytracing.hardware.prepare(render_view, rb.combined_tx, direct) &&
-        inst_.film.reconstruction().ray_reconstruction()) {
+        inst_.film.reconstruction().ray_reconstruction())
+    {
       inst_.film.reconstruction().reject("hardware RT preparation failed");
     }
     indirect_result_.release();
@@ -1142,8 +1179,18 @@ gpu::Texture *DeferredLayer::render(View &render_view,
     inst_.manager->submit(eval_light_ps_, render_view);
   }
 
+  const bool rr_sss = hardware_opaque_layer_ && (closure_bits_ & CLOSURE_SSS) &&
+                      inst_.film.reconstruction().subsurface_guide_needed();
+  if (rr_sss) {
+    inst_.film.reconstruction().capture_subsurface(
+        render_view, direct_radiance_txs_[0], indirect_result_.closures[0], true);
+  }
   inst_.subsurface.render(
       direct_radiance_txs_[0], indirect_result_.closures[0], closure_bits_, render_view);
+  if (rr_sss) {
+    inst_.film.reconstruction().capture_subsurface(
+        render_view, direct_radiance_txs_[0], indirect_result_.closures[0], false);
+  }
 
   radiance_feedback_tx_ = rt_buffer.feedback_ensure(!use_feedback_output_, extent);
 
@@ -1155,7 +1202,9 @@ gpu::Texture *DeferredLayer::render(View &render_view,
 
   GPU_framebuffer_bind(combined_fb);
   inst_.manager->submit(combine_ps_, render_view);
-  if (hardware_opaque_layer_) { inst_.film.reconstruction().prepare_guides(render_view); }
+  if (hardware_opaque_layer_) {
+    inst_.film.reconstruction().prepare_guides(render_view);
+  }
 
   if (use_feedback_output_ && !use_clamp_direct_) {
     /* We skip writing the radiance during the combine pass. Do a simple fast copy. */

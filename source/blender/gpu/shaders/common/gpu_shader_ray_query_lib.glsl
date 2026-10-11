@@ -45,3 +45,25 @@ GPURayQueryHit gpu_ray_query(accelerationStructureEXT scene,
 #endif
   return hit;
 }
+
+#ifdef GPU_RAY_QUERY
+/** Read a non-opaque candidate without committing it. Material evaluation decides acceptance. */
+GPURayQueryHit gpu_ray_query_candidate(rayQueryEXT query)
+{
+  GPURayQueryHit hit;
+  hit.valid = rayQueryGetIntersectionTypeEXT(query, false) ==
+              gl_RayQueryCandidateIntersectionTriangleEXT;
+  hit.front_face = true;
+  hit.distance = 0.0f;
+  hit.instance = hit.primitive = 0u;
+  hit.barycentric = float2(0.0f);
+  if (hit.valid) {
+    hit.distance = rayQueryGetIntersectionTEXT(query, false);
+    hit.instance = rayQueryGetIntersectionInstanceCustomIndexEXT(query, false);
+    hit.primitive = rayQueryGetIntersectionPrimitiveIndexEXT(query, false);
+    hit.barycentric = rayQueryGetIntersectionBarycentricsEXT(query, false);
+    hit.front_face = rayQueryGetIntersectionFrontFaceEXT(query, false);
+  }
+  return hit;
+}
+#endif

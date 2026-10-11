@@ -24,6 +24,7 @@ struct Resources {
   [[specialization_constant(0)]] int closure_index;
   [[specialization_constant(true)]] bool trace_refraction;
   [[push_constant]] const bool hardware_opaque_trace;
+  [[image(3, read, UINT_8)]] const uimage2D ray_path_img;
 
   [[storage(5, read)]] const uint (&tiles_coord_buf)[];
 
@@ -88,8 +89,8 @@ void trace([[resource_table]] Resources &srt,
   gbuffer::Header gbuf_header = reader.read_header(texel_fullres);
   ClosureType closure_type = gbuffer::mode_to_closure_type(
       gbuf_header.bin_type(srt.closure_index));
-  if (srt.hardware_opaque_trace && !closure_has_transmission(closure_type)) {
-    /* These rays are resolved by the following hardware query dispatch. */
+  if (srt.hardware_opaque_trace && imageLoad(srt.ray_path_img, texel).r != 0u) {
+    /* Hardware or surface-matched native results have already resolved this ray. */
     return;
   }
 

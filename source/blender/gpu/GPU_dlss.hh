@@ -15,11 +15,25 @@ class Texture;
 
 enum class DLSSQuality { Quality, Balanced, Performance };
 enum class DLSSMode { SuperResolution, RayReconstruction };
+enum class DLSSTransparencyInput {
+  /* Color already includes every transparent contribution. No overlay is evaluated. */
+  CompositedColor,
+  /* Experimental SDK contract: color excludes the separately supplied layer. */
+  SeparateLayer,
+};
 
 struct DLSSFrame {
+  DLSSTransparencyInput transparency_input = DLSSTransparencyInput::CompositedColor;
   Texture *color = nullptr, *depth = nullptr, *motion = nullptr, *output = nullptr;
   Texture *diffuse_albedo = nullptr, *specular_albedo = nullptr;
   Texture *normal_roughness = nullptr, *specular_hit_distance = nullptr;
+  /* Optional RR inputs, at input resolution and with the same origin as color.
+   * Transparency is premultiplied radiance plus RGB opacity (1 - transmittance).
+   * SSS is signed scene-linear luminance change, not an opacity mask. */
+  Texture *color_before_transparency = nullptr;
+  Texture *transparency_radiance = nullptr, *transparency_opacity = nullptr;
+  Texture *transparency_motion = nullptr, *subsurface_guide = nullptr;
+  Texture *disocclusion_mask = nullptr, *bias_current_color_mask = nullptr;
   float4x4 world_to_view = float4x4::identity();
   float4x4 view_to_clip = float4x4::identity();
   float2 jitter = float2(0);

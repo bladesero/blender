@@ -240,7 +240,38 @@ class ForwardPipeline {
 
  public:
   ForwardPipeline(Instance &inst) : inst_(inst) {}
-  bool reconstruction_unsupported() const { return has_opaque_ || has_transparent_ || has_holdout_; }
+  bool has_opaque() const
+  {
+    return has_opaque_;
+  }
+  bool has_transparent() const
+  {
+    return has_transparent_;
+  }
+  bool has_holdout() const
+  {
+    return has_holdout_;
+  }
+  void reconstruction_layers(View &view,
+                             gpu::Texture *depth,
+                             Framebuffer &framebuffer,
+                             int2 extent);
+  gpu::Texture *layer_r()
+  {
+    return transp_buffer_.r_channel_tx;
+  }
+  gpu::Texture *layer_g()
+  {
+    return transp_buffer_.g_channel_tx;
+  }
+  gpu::Texture *layer_b()
+  {
+    return transp_buffer_.b_channel_tx;
+  }
+  void release_layers()
+  {
+    transp_buffer_.release();
+  }
 
   void sync();
   void end_sync();
@@ -266,7 +297,8 @@ class ForwardPipeline {
               Framebuffer &prepass_fb,
               Framebuffer &transparent_fb,
               Framebuffer &combined_fb,
-              int2 extent);
+              int2 extent,
+              bool draw_transparent = true);
 };
 
 /** \} */
@@ -492,6 +524,12 @@ class DeferredPipeline {
               int2 extent,
               RayTraceBuffer &rt_buffer_opaque_layer,
               RayTraceBuffer &rt_buffer_refract_layer);
+
+  void reconstruction_depth(View &view, gpu::Texture *depth)
+  {
+    opaque_layer_.prepass_.render(view, depth, true);
+    refraction_layer_.prepass_.render(view, depth, true);
+  }
 
   /* Return the maximum amount of gbuffer layer needed. */
   int header_layer_count() const

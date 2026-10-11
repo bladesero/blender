@@ -63,7 +63,8 @@ VKAccelerationStructure::~VKAccelerationStructure()
 
 bool VKAccelerationStructure::build_mesh(Span<float3> positions,
                                          Span<uint3> triangles,
-                                         bool allow_update)
+                                         bool allow_update,
+                                         bool opaque)
 {
   const bool was_valid = valid_;
   valid_ = false;
@@ -82,7 +83,7 @@ bool VKAccelerationStructure::build_mesh(Span<float3> positions,
   }
   const bool update = was_valid && handle_ &&
                       type_ == VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR && allow_update_ &&
-                      allow_update && vertex_count_ == positions.size() &&
+                      allow_update && opaque_ == opaque && vertex_count_ == positions.size() &&
                       primitive_count_ == triangles.size() && triangles_.as_span() == triangles;
   if (!upload(vertices_, positions.data(), positions.size_in_bytes()) ||
       !upload(indices_, triangles.data(), triangles.size_in_bytes()))
@@ -91,12 +92,13 @@ bool VKAccelerationStructure::build_mesh(Span<float3> positions,
   }
   type_ = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
   allow_update_ = allow_update;
+  opaque_ = opaque;
   vertex_count_ = uint32_t(positions.size());
   triangles_ = triangles;
   VkAccelerationStructureGeometryKHR geometry = {
       VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR};
   geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-  geometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+  geometry.flags = opaque ? VK_GEOMETRY_OPAQUE_BIT_KHR : 0;
   auto &tri = geometry.geometry.triangles;
   tri.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
   tri.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;

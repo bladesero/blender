@@ -52,6 +52,7 @@ struct TileBuffer {
 struct DenoiseSpatial {
   [[specialization_constant(2)]] int raytrace_resolution_scale;
   [[specialization_constant(false)]] bool skip_denoise;
+  [[image(7, read, UINT_8)]] const uimage2D ray_path_img;
   [[specialization_constant(0)]] int closure_index;
 
   [[sampler(3)]] sampler2DDepth depth_tx;
@@ -239,6 +240,16 @@ void spatial_main([[resource_table]] DenoiseSpatial &srt,
     return;
   }
 
+  /* RR bypass must still clear the unused tile border above. Pooled radiance and variance
+   * outside the active tiles must never become another pixel's native denoise history. */
+  if (uni.raytrace_buf.use_rr && imageLoad(srt.ray_path_img, texel_nearest).r == 1u) {
+    imageStore(
+        srt.out_radiance_img, texel_fullres, imageLoad(srt.ray_radiance_img, texel_nearest));
+    imageStore(srt.out_variance_img, texel_fullres, float4(-1.0f));
+    imageStore(srt.out_hit_depth_img, texel_fullres, float4(0.0f));
+    return;
+  }
+
   float2 noise = util_tx.fetch(float2(texel_fullres), UTIL_BLUE_NOISE_LAYER).ba;
   noise = fract(noise + sampling.rng_1D_get(SAMPLING_CLOSURE));
 
@@ -329,6 +340,9 @@ void spatial_main([[resource_table]] DenoiseSpatial &srt,
 
     int2 sample_texel = center_sample_texel + offset;
 
+    if (uni.raytrace_buf.use_rr && imageLoad(srt.ray_path_img, sample_texel).r == 1u) {
+      continue;
+    }
     float4 ray_data = imageLoad(srt.ray_data_img, sample_texel);
     float ray_time = imageLoad(srt.ray_time_img, sample_texel).r;
     float4 ray_radiance = imageLoad(srt.ray_radiance_img, sample_texel);
@@ -431,6 +445,9 @@ struct DenoiseTemporal {
         if (!in_image_range(neighbor_texel, in_radiance_img)) {
           continue;
         }
+        if (imageLoad(in_variance_img, neighbor_texel).r < 0.0f) {
+          continue;
+        }
         float3 radiance = imageLoad(in_radiance_img, neighbor_texel).rgb;
         /* Exclude unprocessed pixels. */
         if (all(equal(radiance, FLT_11_11_10_MAX))) {
@@ -472,6 +489,11 @@ struct DenoiseTemporal {
     /* Exclude unprocessed pixels. */
     if (!is_valid_history) {
       return float4(0.0f);
+    }
+    if (in_texture_range(texel, variance_history_tx)) {
+      if (texelFetch(variance_history_tx, texel, 0).r < 0.0f) {
+        return float4(0.0f);
+      }
     }
     /* Exclude unprocessed pixels. */
     if (all(equal(history_radiance, FLT_11_11_10_MAX))) {
@@ -601,6 +623,12 @@ void temporal_main([[resource_table]] DenoiseTemporal &srt,
   /* Check if texel is out of bounds,
    * so we can utilize fast texture functions and early-out if not. */
   if (any(greaterThanEqual(texel_fullres, imageSize(srt.in_radiance_img).xy))) {
+    return;
+  }
+
+  if (imageLoad(srt.in_variance_img, texel_fullres).r < 0.0f) {
+    imageStore(srt.out_radiance_img, texel_fullres, imageLoad(srt.in_radiance_img, texel_fullres));
+    imageStore(srt.out_variance_img, texel_fullres, float4(-1.0f));
     return;
   }
 
@@ -742,6 +770,11 @@ void bilateral_main([[resource_table]] DenoiseBilateral &srt,
     int2 offset = int2(floor(offset_f + 0.5f));
 
     int2 sample_texel = texel_fullres + offset;
+    if (in_image_range(sample_texel, srt.in_variance_img) &&
+        imageLoad(srt.in_variance_img, sample_texel).r < 0.0f)
+    {
+      continue;
+    }
     int3 sample_tile = int3(sample_texel / RAYTRACE_GROUP_SIZE, srt.closure_index);
     /* Make sure the sample has been processed and do not contain garbage data. */
     if (imageLoad(srt.tile_mask_img, sample_tile).r == 0u) {

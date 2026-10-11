@@ -202,6 +202,13 @@ class Film {
   }
 
   eViewLayerEEVEEPassType enabled_passes_get() const;
+
+  /** Actual Film outputs, excluding internal motion vectors requested by reconstruction. */
+  eViewLayerEEVEEPassType output_passes_get() const
+  {
+    return enabled_passes_;
+  }
+
   int cryptomatte_layer_len_get() const;
 
   /** WARNING: Film and RenderBuffers use different storage types for AO and Shadow. */
