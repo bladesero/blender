@@ -64,6 +64,10 @@ void RayTraceModule::init()
 
   hardware.init();
   ray_tracing_options_ = sce_eevee.ray_tracing_options;
+  if (inst_.film.reconstruction().ray_reconstruction()) {
+    ray_tracing_options_.resolution_scale = 1;
+    ray_tracing_options_.flag &= ~RAYTRACE_EEVEE_USE_DENOISE;
+  }
   if ((sce_eevee.flag & SCE_EEVEE_FAST_GI_ENABLED) == 0 || hardware.enabled()) {
     ray_tracing_options_.trace_max_roughness = 1.0f;
   }
@@ -701,6 +705,13 @@ RayTraceResultTexture RayTraceModule::trace(int closure_index,
   const bool use_bilateral_denoise = (options.denoise_stages & RAYTRACE_EEVEE_DENOISE_BILATERAL) &&
                                      use_temporal_denoise;
 
+  if (inst_.film.reconstruction().ray_reconstruction() && (G.debug & G_DEBUG_GPU) &&
+      inst_.sampling.sample_index() == 1) {
+    fprintf(stderr, "DLSS RR tracing: closure=%d, scale=%d, spatial=%d, temporal=%d, bilateral=%d\n",
+            closure_index, resolution_scale, int(use_spatial_denoise),
+            int(use_temporal_denoise), int(use_bilateral_denoise));
+  }
+
   eGPUTextureUsage usage_rw = GPU_TEXTURE_USAGE_SHADER_READ | GPU_TEXTURE_USAGE_SHADER_WRITE;
 
   GPU_debug_group_begin("Raytracing");
@@ -765,6 +776,7 @@ RayTraceResultTexture RayTraceModule::trace(int closure_index,
     result = {denoise_buf->denoised_spatial_tx};
   }
 
+  inst_.film.reconstruction().capture_hit(render_view, ray_time_tx_, closure_index);
   ray_data_tx_.release();
   ray_time_tx_.release();
   ray_radiance_tx_.release();

@@ -7,6 +7,9 @@
  */
 
 #include "GHOST_ContextVK.hh"
+#ifdef WITH_NVIDIA_DLSS
+#  include <nvsdk_ngx_vk.h>
+#endif
 #include "GHOST_Types.hh"
 #include <vulkan/vulkan_core.h>
 
@@ -1705,6 +1708,28 @@ GHOST_TSuccess GHOST_ContextVK::initializeDrawingContext()
     vulkan_instance.emplace();
     GHOST_InstanceVK &instance_vk = vulkan_instance.value();
     instance_vk.extensions.enable(VK_EXT_DEBUG_UTILS_EXTENSION_NAME, true);
+#ifdef WITH_NVIDIA_DLSS
+    /* Request NGX dependencies before device creation. Optional here: DLSS must not
+     * prevent non-RTX devices or installations without the runtime from starting. */
+    unsigned int ngx_instance_count = 0, ngx_device_count = 0;
+    const char **ngx_instance_extensions = nullptr, **ngx_device_extensions = nullptr;
+    if (NVSDK_NGX_SUCCEED(NVSDK_NGX_VULKAN_RequiredExtensions(
+            &ngx_instance_count, &ngx_instance_extensions,
+            &ngx_device_count, &ngx_device_extensions)))
+    {
+      for (unsigned int i = 0; i < ngx_instance_count; i++) {
+        instance_vk.extensions.enable(ngx_instance_extensions[i], true);
+      }
+      for (unsigned int i = 0; i < ngx_device_count; i++) {
+        /* Buffer addresses are already enabled through Vulkan 1.2. The legacy EXT
+         * extension must not coexist with VkPhysicalDeviceVulkan12Features. */
+        if (strcmp(ngx_device_extensions[i], VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME) == 0) {
+          continue;
+        }
+        optional_device_extensions.append(ngx_device_extensions[i]);
+      }
+    }
+#endif
 
     /* Some XR platforms load functions without knowing if they were replaced by a core
      * function. Monado for example always uses the extension functions. Due to maintenance changes

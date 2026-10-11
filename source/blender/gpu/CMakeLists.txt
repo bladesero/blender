@@ -66,6 +66,8 @@ set(INC_SYS
 )
 
 set(SRC
+  intern/gpu_dlss.cc
+  GPU_dlss.hh
   intern/gpu_batch.cc
   intern/gpu_batch_presets.cc
   intern/gpu_batch_utils.cc
@@ -247,6 +249,7 @@ set(OPENGL_SRC
 )
 
 set(VULKAN_SRC
+  vulkan/render_graph/nodes/vk_external_compute_node.hh
   vulkan/vk_backend.cc
   vulkan/vk_batch.cc
   vulkan/vk_buffer.cc
@@ -903,6 +906,13 @@ endif()
 
 if(WITH_GTESTS)
   add_definitions(-DWITH_GTESTS)
+endif()
+
+if(WITH_NVIDIA_DLSS)
+  list(APPEND SRC vulkan/vk_dlss.cc vulkan/vk_dlss.hh)
+  list(APPEND INC_SYS ${NVIDIA_DLSS_ROOT}/include)
+  list(APPEND LIB ${NVIDIA_DLSS_LIBRARY})
+  add_definitions(-DWITH_NVIDIA_DLSS)
 endif()
 
 blender_add_lib(bf_gpu "${SRC}" "${INC}" "${INC_SYS}" "${LIB}")

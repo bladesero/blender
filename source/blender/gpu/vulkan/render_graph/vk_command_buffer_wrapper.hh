@@ -9,6 +9,7 @@
 #pragma once
 
 #include "vk_common.hh"
+#include <functional>
 
 namespace blender {
 
@@ -27,6 +28,7 @@ class VKCommandBufferInterface {
   virtual void build_acceleration_structure(
       const VkAccelerationStructureBuildGeometryInfoKHR &info,
       const VkAccelerationStructureBuildRangeInfoKHR &range) = 0;
+  virtual void external_compute(const std::function<void(VkCommandBuffer)> &record) = 0;
   virtual void begin_recording() = 0;
   virtual void end_recording() = 0;
 
@@ -162,6 +164,10 @@ class VKCommandBufferWrapper : public VKCommandBufferInterface {
 
  public:
   VKCommandBufferWrapper(VkCommandBuffer vk_command_buffer, const VKExtensions &extensions);
+  void external_compute(const std::function<void(VkCommandBuffer)> &record) override
+  {
+    record(vk_command_buffer_);
+  }
 
   void build_acceleration_structure(
       const VkAccelerationStructureBuildGeometryInfoKHR &info,

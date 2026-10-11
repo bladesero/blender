@@ -2658,7 +2658,11 @@ struct SceneEEVEE {
   int gi_visibility_resolution = 32;
   float gi_glossy_clamp = 0;
   int gi_irradiance_pool_size = 16;
-  char _pad0[4] = {};
+  int dlss_quality = 0; /* 0: Off, 1: Quality, 2: Balanced, 3: Performance. */
+  int dlss_render_quality = 0;
+  int dlss_rr = 0;
+  int dlss_render_rr = 0;
+  char _pad_dlss[4] = {};
 
   int taa_samples = 16;
   int taa_render_samples = 64;

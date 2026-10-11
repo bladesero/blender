@@ -10,6 +10,114 @@ namespace blender::gpu::render_graph {
 
 class VKRenderGraphTestCompute : public VKRenderGraphTest {};
 
+TEST_F(VKRenderGraphTestCompute, external_rr_inputs_and_reuse)
+{
+  VKExternalComputeData rr;
+  const VkImage output = VkHandle<VkImage>(8);
+  resources.add_image(output, false);
+  for (uint64_t i = 1; i <= 7; i++) {
+    const VkImage input = VkHandle<VkImage>(i);
+    resources.add_image(input, false);
+    rr.inputs.append(input);
+    VKResourceAccessInfo access;
+    access.images.append({input, VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT});
+    VKDispatchNode::CreateInfo producer(access);
+    producer.dispatch_node.group_count_x = producer.dispatch_node.group_count_y =
+        producer.dispatch_node.group_count_z = 1;
+    render_graph->add_node(producer);
+  }
+  rr.outputs.append(output);
+  rr.record = [](VkCommandBuffer) {};
+  render_graph->add_node(rr);
+  /* Reuse the first guide after the SDK reads it. It must not be reordered before RR. */
+  VKResourceAccessInfo reuse;
+  reuse.images.append({rr.inputs[0], VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT});
+  reuse.images.append({output, VK_ACCESS_SHADER_READ_BIT, VK_IMAGE_ASPECT_COLOR_BIT});
+  VKDispatchNode::CreateInfo consumer(reuse);
+  consumer.dispatch_node.group_count_x = consumer.dispatch_node.group_count_y =
+      consumer.dispatch_node.group_count_z = 1;
+  render_graph->add_node(consumer);
+  submit(render_graph, command_buffer);
+  int dispatches = 0, external = 0, input_barriers = 0;
+  bool reuse_barrier = false;
+  for (const std::string &entry : log) {
+    if (entry == "external_compute()") {
+      EXPECT_EQ(dispatches, 7);
+      external++;
+    }
+    dispatches += entry.find("dispatch(") == 0;
+    size_t offset = 0;
+    while ((offset = entry.find("dst_access_mask=VK_ACCESS_MEMORY_READ_BIT", offset)) !=
+           std::string::npos)
+    {
+      input_barriers++;
+      offset++;
+    }
+    reuse_barrier |= external > 0 &&
+                     entry.find("src_access_mask=VK_ACCESS_MEMORY_READ_BIT") !=
+                         std::string::npos &&
+                     entry.find("dst_access_mask=VK_ACCESS_SHADER_WRITE_BIT") != std::string::npos;
+  }
+  EXPECT_EQ(external, 1);
+  EXPECT_EQ(dispatches, 8);
+  /* Seven inputs plus the SDK output, which declares read/write access. */
+  EXPECT_EQ(input_barriers, 8);
+  EXPECT_TRUE(reuse_barrier);
+}
+
+TEST_F(VKRenderGraphTestCompute, external_compute_dependencies_and_rebind)
+{
+  const VkImage input = VkHandle<VkImage>(1);
+  const VkImage output = VkHandle<VkImage>(2);
+  resources.add_image(input, false);
+  resources.add_image(output, false);
+  auto dispatch = [&](VkImage image, VkAccessFlags flags) {
+    VKResourceAccessInfo access;
+    access.images.append({image, flags, VK_IMAGE_ASPECT_COLOR_BIT});
+    VKDispatchNode::CreateInfo info(access);
+    info.dispatch_node.pipeline_data.vk_pipeline = VkHandle<VkPipeline>(3);
+    info.dispatch_node.pipeline_data.vk_pipeline_layout = VkHandle<VkPipelineLayout>(4);
+    info.dispatch_node.pipeline_data.vk_descriptor_set = VkHandle<VkDescriptorSet>(5);
+    info.dispatch_node.group_count_x = info.dispatch_node.group_count_y =
+        info.dispatch_node.group_count_z = 1;
+    render_graph->add_node(info);
+  };
+  dispatch(input, VK_ACCESS_SHADER_WRITE_BIT);
+  VKExternalComputeData external;
+  external.inputs.append(input);
+  external.outputs.append(output);
+  external.record = [](VkCommandBuffer) {};
+  render_graph->add_node(external);
+  dispatch(output, VK_ACCESS_SHADER_READ_BIT);
+  submit(render_graph, command_buffer);
+
+  int external_index = -1, dispatches = 0, pipeline_binds = 0, descriptor_binds = 0;
+  bool input_barrier = false, output_barrier = false;
+  for (int i : log.index_range()) {
+    const std::string &entry = log[i];
+    if (entry == "external_compute()") {
+      external_index = i;
+      EXPECT_EQ(dispatches, 1);
+    }
+    dispatches += entry.find("dispatch(") == 0;
+    pipeline_binds += entry.find("bind_pipeline(") == 0;
+    descriptor_binds += entry.find("bind_descriptor_sets(") == 0;
+    input_barrier |= external_index < 0 &&
+                     entry.find("src_access_mask=VK_ACCESS_SHADER_WRITE_BIT") != std::string::npos &&
+                     entry.find("dst_access_mask=VK_ACCESS_MEMORY_READ_BIT") != std::string::npos;
+    output_barrier |= external_index >= 0 &&
+                      entry.find("VK_ACCESS_MEMORY_WRITE_BIT") != std::string::npos &&
+                      entry.find("dst_access_mask=VK_ACCESS_SHADER_READ_BIT") != std::string::npos;
+  }
+  EXPECT_GE(external_index, 0);
+  EXPECT_EQ(dispatches, 2);
+  EXPECT_TRUE(input_barrier);
+  EXPECT_TRUE(output_barrier);
+  /* The same pipeline and descriptor set must be rebound after the external SDK call. */
+  EXPECT_EQ(pipeline_binds, 2);
+  EXPECT_EQ(descriptor_binds, 2);
+}
+
 TEST_F(VKRenderGraphTestCompute, acceleration_structure_dependencies)
 {
   const VkBuffer vertices = VkHandle<VkBuffer>(1);

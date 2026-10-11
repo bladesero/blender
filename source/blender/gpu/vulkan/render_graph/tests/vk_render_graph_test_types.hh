@@ -45,6 +45,12 @@ class CommandBufferLog : public VKCommandBufferInterface {
                 ")");
   }
 
+  void external_compute(const std::function<void(VkCommandBuffer)> & /*record*/) override
+  {
+    EXPECT_TRUE(is_recording_);
+    log_.append("external_compute()");
+  }
+
   void begin_recording() override
   {
     EXPECT_FALSE(is_recording_);

@@ -21,6 +21,7 @@
 #include "nodes/vk_copy_image_to_buffer_node.hh"
 #include "nodes/vk_dispatch_indirect_node.hh"
 #include "nodes/vk_dispatch_node.hh"
+#include "nodes/vk_external_compute_node.hh"
 #include "nodes/vk_draw_indexed_indirect_node.hh"
 #include "nodes/vk_draw_indexed_node.hh"
 #include "nodes/vk_draw_indirect_node.hh"
@@ -49,6 +50,7 @@ using NodeHandle = uint64_t;
  *
  */
 struct VKRenderGraphStorage {
+  Vector<VKExternalComputeNode::Data> external_compute;
   Vector<VKBuildAccelerationStructureNode::Data> build_acceleration_structure;
   Vector<VKBeginRenderingNode::Data, 1024> begin_rendering;
   Vector<VKClearAttachmentsNode::Data, 1024> clear_attachments;
@@ -64,6 +66,7 @@ struct VKRenderGraphStorage {
 
   void reset()
   {
+    external_compute.clear_and_shrink();
     build_acceleration_structure.clear_and_shrink();
     begin_rendering.clear_and_shrink();
     clear_attachments.clear_and_shrink();
@@ -162,6 +165,8 @@ struct VKRenderGraphNode {
     switch (type) {
       case VKNodeType::UNUSED:
         return VK_PIPELINE_STAGE_NONE;
+      case VKNodeType::EXTERNAL_COMPUTE:
+        return VKExternalComputeNode::pipeline_stage;
       case VKNodeType::BUILD_ACCELERATION_STRUCTURE:
         return VKBuildAccelerationStructureNode::pipeline_stage;
       case VKNodeType::BEGIN_QUERY:
@@ -247,6 +252,7 @@ struct VKRenderGraphNode {
     break; \
   }
 
+        BUILD_COMMANDS_STORAGE(VKNodeType::EXTERNAL_COMPUTE, VKExternalComputeNode, external_compute)
         BUILD_COMMANDS_STORAGE(VKNodeType::BUILD_ACCELERATION_STRUCTURE,
                                VKBuildAccelerationStructureNode,
                                build_acceleration_structure)
@@ -302,6 +308,7 @@ struct VKRenderGraphNode {
 #undef FREE_DATA
 
       case VKNodeType::UNUSED:
+      case VKNodeType::EXTERNAL_COMPUTE:
       case VKNodeType::BUILD_ACCELERATION_STRUCTURE:
       case VKNodeType::BEGIN_QUERY:
       case VKNodeType::BEGIN_RENDERING:

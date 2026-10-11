@@ -97,6 +97,8 @@ set(SRC
   engines/eevee/eevee_cryptomatte.cc
   engines/eevee/eevee_depth_of_field.cc
   engines/eevee/eevee_engine.cc
+  engines/eevee/eevee_dlss.cc
+  engines/eevee/eevee_dlss.hh
   engines/eevee/eevee_film.cc
   engines/eevee/eevee_hizbuffer.cc
   engines/eevee/eevee_instance.cc
@@ -392,6 +394,7 @@ set(GLSL_SRC
   engines/eevee/shaders/eevee_depth_of_field_scatter.bsl.hh
   engines/eevee/shaders/eevee_depth_of_field_setup.bsl.hh
   engines/eevee/shaders/eevee_depth_of_field_tiles.bsl.hh
+  engines/eevee/shaders/eevee_dlss.bsl.hh
   engines/eevee/shaders/eevee_film.bsl.hh
   engines/eevee/shaders/eevee_filter.bsl.hh
   engines/eevee/shaders/eevee_forward_lib.bsl.hh

@@ -22,6 +22,7 @@ namespace blender::gpu::render_graph {
 enum class VKNodeType {
   UNUSED,
   BUILD_ACCELERATION_STRUCTURE,
+  EXTERNAL_COMPUTE,
   BEGIN_QUERY,
   BEGIN_RENDERING,
   BLIT_IMAGE,
@@ -52,6 +53,9 @@ BLI_INLINE std::ostream &operator<<(std::ostream &os, const VKNodeType node_type
   switch (node_type) {
     case VKNodeType::UNUSED:
       os << "UNUSED";
+      break;
+    case VKNodeType::EXTERNAL_COMPUTE:
+      os << "EXTERNAL_COMPUTE";
       break;
     case VKNodeType::BUILD_ACCELERATION_STRUCTURE:
       os << "BUILD_ACCELERATION_STRUCTURE";

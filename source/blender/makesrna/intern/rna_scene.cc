@@ -8338,7 +8338,38 @@ static void rna_def_scene_eevee(BlenderRNA *brna)
   RNA_def_property_override_flag(prop, PROPOVERRIDE_OVERRIDABLE_LIBRARY);
   RNA_def_property_update(prop, NC_SCENE | ND_RENDER_OPTIONS, nullptr);
 
+  static const EnumPropertyItem dlss_quality_items[] = {
+      {0, "OFF", 0, "Off", "Use native EEVEE viewport rendering"},
+      {1, "QUALITY", 0, "Quality", "DLSS Super Resolution, favor image quality"},
+      {2, "BALANCED", 0, "Balanced", "DLSS Super Resolution, balance quality and performance"},
+      {3, "PERFORMANCE", 0, "Performance", "DLSS Super Resolution, favor performance"},
+      {0, nullptr, 0, nullptr, nullptr},
+  };
+  prop = RNA_def_property(srna, "dlss_quality", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, dlss_quality_items);
+  RNA_def_property_ui_text(prop, "DLSS Super Resolution",
+                           "Experimental Vulkan viewport upscaling on NVIDIA RTX GPUs; "
+                           "unsupported configurations use native EEVEE");
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
+  RNA_def_property_update(prop, NC_SCENE | ND_RENDER_OPTIONS, nullptr);
+
   /* Temporal Anti-Aliasing (super sampling) */
+  prop = RNA_def_property(srna, "dlss_render_quality", PROP_ENUM, PROP_NONE);
+  RNA_def_property_enum_items(prop, dlss_quality_items);
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
+  RNA_def_property_ui_text(prop, "DLSS Super Resolution", "Experimental Vulkan Combined render reconstruction");
+  RNA_def_property_update(prop, NC_SCENE | ND_RENDER_OPTIONS, nullptr);
+  prop = RNA_def_property(srna, "dlss_rr", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, nullptr, "dlss_rr", 1);
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
+  RNA_def_property_ui_text(prop, "Ray Reconstruction", "Use DLSS Ray Reconstruction with supported hardware ray traced materials");
+  RNA_def_property_update(prop, NC_SCENE | ND_RENDER_OPTIONS, nullptr);
+  prop = RNA_def_property(srna, "dlss_render_rr", PROP_BOOLEAN, PROP_NONE);
+  RNA_def_property_boolean_sdna(prop, nullptr, "dlss_render_rr", 1);
+  RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
+  RNA_def_property_ui_text(prop, "Ray Reconstruction", "Use frame-independent Ray Reconstruction for Combined renders");
+  RNA_def_property_update(prop, NC_SCENE | ND_RENDER_OPTIONS, nullptr);
+
   prop = RNA_def_property(srna, "taa_samples", PROP_INT, PROP_NONE);
   RNA_def_property_ui_text(prop, "Viewport Samples", "Number of samples, unlimited if 0");
   RNA_def_property_range(prop, 0, INT_MAX);

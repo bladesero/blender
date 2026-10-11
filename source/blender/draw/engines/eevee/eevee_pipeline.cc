@@ -1119,7 +1119,10 @@ gpu::Texture *DeferredLayer::render(View &render_view,
     inst_.manager->submit(eval_light_ps_, render_view);
     gpu::Texture *direct[] = {
         direct_radiance_txs_[0], direct_radiance_txs_[1], direct_radiance_txs_[2]};
-    inst_.raytracing.hardware.prepare(render_view, rb.combined_tx, direct);
+    if (!inst_.raytracing.hardware.prepare(render_view, rb.combined_tx, direct) &&
+        inst_.film.reconstruction().ray_reconstruction()) {
+      inst_.film.reconstruction().reject("hardware RT preparation failed");
+    }
     indirect_result_.release();
   }
 
@@ -1152,6 +1155,7 @@ gpu::Texture *DeferredLayer::render(View &render_view,
 
   GPU_framebuffer_bind(combined_fb);
   inst_.manager->submit(combine_ps_, render_view);
+  if (hardware_opaque_layer_) { inst_.film.reconstruction().prepare_guides(render_view); }
 
   if (use_feedback_output_ && !use_clamp_direct_) {
     /* We skip writing the radiance during the combine pass. Do a simple fast copy. */

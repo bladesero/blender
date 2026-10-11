@@ -144,6 +144,7 @@ void ShadingView::render()
 
   inst_.volume.draw_prepass(main_view_);
 
+  inst_.film.reconstruction().begin_trace();
   inst_.pipelines.deferred.render(main_view_,
                                   render_view_,
                                   prepass_fb_,

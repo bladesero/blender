@@ -897,6 +897,10 @@ endif()
 
 
 # GPU Module
+option(WITH_NVIDIA_DLSS "Build experimental EEVEE Vulkan DLSS SR/RR" OFF)
+set(NVIDIA_DLSS_ROOT "" CACHE PATH "External NVIDIA DLSS SDK directory (310.4.0)")
+
+
 option(WITH_RENDERDOC "Use RenderDoc API to capture frames" OFF)
 
 option(WITH_GPU_SHADER_ASSERT "\
@@ -943,6 +947,19 @@ if(NOT APPLE)
 else()
   option(WITH_VULKAN_BACKEND "Enable Vulkan as graphics backend (development option)" OFF)
   mark_as_advanced(WITH_VULKAN_BACKEND)
+endif()
+
+if(WITH_NVIDIA_DLSS)
+  if(NOT WIN32 OR NOT WITH_VULKAN_BACKEND)
+    message(FATAL_ERROR "NVIDIA DLSS currently requires Windows and WITH_VULKAN_BACKEND")
+  endif()
+  if(NOT EXISTS "${NVIDIA_DLSS_ROOT}/include/nvsdk_ngx_helpers_dlssd_vk.h")
+    message(FATAL_ERROR "Set NVIDIA_DLSS_ROOT to an unpacked NVIDIA DLSS SDK 310.4.0")
+  endif()
+  set(NVIDIA_DLSS_LIBRARY
+    optimized "${NVIDIA_DLSS_ROOT}/lib/Windows_x86_64/x64/nvsdk_ngx_d.lib"
+    debug "${NVIDIA_DLSS_ROOT}/lib/Windows_x86_64/x64/nvsdk_ngx_d_dbg_iterator0.lib"
+  )
 endif()
 
 # Metal

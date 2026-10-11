@@ -174,6 +174,7 @@ class VKRenderGraph : public NonCopyable {
   { \
     return add_node<NODE_CLASS>(create_info); \
   }
+  ADD_NODE(VKExternalComputeNode)
   ADD_NODE(VKBeginQueryNode)
   ADD_NODE(VKBeginRenderingNode)
   ADD_NODE(VKEndQueryNode)

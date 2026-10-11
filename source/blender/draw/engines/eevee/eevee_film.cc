@@ -285,6 +285,8 @@ void Film::init(const int2 &extent, const rcti *output_rect)
 {
   using namespace math;
 
+  native_extent_ = extent;
+  native_rect_ = output_rect ? *output_rect : rcti{0, extent.x, 0, extent.y};
   Sampling &sampling = inst_.sampling;
   Scene &scene = *inst_.scene;
 
@@ -370,6 +372,13 @@ void Film::init(const int2 &extent, const rcti *output_rect)
     data_.render_extent = divide_ceil(data_.extent, int2(data_.scaling_factor));
     data_.overscan = overscan_pixels_get(inst_.camera.overscan(), data_.render_extent);
     data_.render_extent += data_.overscan * 2;
+    dlss_.init(data_.extent, data_.offset == int2(0) && data_.extent == extent);
+    if (dlss_.enabled()) {
+      data_.scaling_factor = 1;
+      data_.render_extent = dlss_.input_size();
+      data_.overscan = 0;
+      data_.texture_lod_bias = float(data_.render_extent.x) / float(data_.extent.x);
+    }
 
     is_valid_render_extent_ = data_.render_extent.x <= GPU_max_texture_size() &&
                               data_.render_extent.y <= GPU_max_texture_size();
@@ -685,6 +694,9 @@ void Film::end_sync()
 
 float2 Film::pixel_jitter_get() const
 {
+  if (dlss_.enabled()) {
+    return dlss_.jitter();
+  }
   float2 jitter = inst_.sampling.rng_2d_get(SAMPLING_FILTER_U);
 
   if (!use_box_filter && data_.filter_radius < M_SQRT1_2 && !inst_.camera.is_panoramic() &&
@@ -727,7 +739,7 @@ float2 Film::pixel_jitter_get() const
 
 eViewLayerEEVEEPassType Film::enabled_passes_get() const
 {
-  if (inst_.is_viewport() && use_reprojection_) {
+  if ((inst_.is_viewport() && use_reprojection_) || dlss_.enabled()) {
     /* Enable motion vector rendering but not the accumulation buffer. */
     return enabled_passes_ | EEVEE_RENDER_PASS_VECTOR;
   }
@@ -867,6 +879,13 @@ void Film::update_sample_table()
 
 void Film::accumulate(View &view, gpu::Texture *combined_final_tx)
 {
+  if (dlss_.restart_pending()) {
+    return;
+  }
+  if (dlss_.enabled()) {
+    dlss_.render(view, combined_final_tx);
+    return;
+  }
   if (inst_.is_viewport()) {
     DefaultFramebufferList *dfbl = inst_.draw_ctx->viewport_framebuffer_list_get();
     DefaultTextureList *dtxl = inst_.draw_ctx->viewport_texture_list_get();
@@ -896,6 +915,10 @@ void Film::accumulate(View &view, gpu::Texture *combined_final_tx)
 void Film::display()
 {
   BLI_assert(inst_.is_viewport());
+  if (dlss_.enabled()) {
+    dlss_.display();
+    return;
+  }
 
   /* Acquire dummy render buffers for correct binding. They will not be used. */
   inst_.render_buffers.acquire(int2(1));
@@ -914,6 +937,19 @@ void Film::display()
   inst_.render_buffers.release();
 
   /* IMPORTANT: Do not swap! No accumulation has happened. */
+}
+
+void Film::restart_native()
+{
+  const int2 extent = native_extent_;
+  const rcti rect = native_rect_;
+  inst_.sampling.init(inst_.scene);
+  inst_.sampling.restart();
+  inst_.raytracing.hardware.invalidate();
+  init(extent, &rect);
+  inst_.render_buffers.init();
+  inst_.raytracing.init();
+  inst_.main_view.init();
 }
 
 void Film::cryptomatte_sort()
@@ -942,6 +978,9 @@ float *Film::read_pass(eViewLayerEEVEEPassType pass_type, int layer_offset)
 
 gpu::Texture *Film::get_pass_texture(eViewLayerEEVEEPassType pass_type, int layer_offset)
 {
+  if (!inst_.is_viewport() && dlss_.enabled() && pass_type == EEVEE_RENDER_PASS_COMBINED) {
+    return dlss_.final_texture();
+  }
   ePassStorageType storage_type = pass_storage_type(pass_type);
   const bool is_value = storage_type == PASS_STORAGE_VALUE;
   const bool is_cryptomatte = storage_type == PASS_STORAGE_CRYPTOMATTE;

@@ -706,7 +706,13 @@ class RENDER_PT_eevee_sampling_viewport(RenderButtonsPanel, Panel):
 
         col = layout.column()
         col.prop(props, "taa_samples", text="Samples")
-        col.prop(props, "use_taa_reprojection", text="Temporal Reprojection")
+        col.prop(props, "dlss_quality")
+        row = col.row()
+        row.active = props.dlss_quality != 'OFF'
+        row.prop(props, "dlss_rr")
+        row = col.row()
+        row.active = props.dlss_quality == 'OFF'
+        row.prop(props, "use_taa_reprojection", text="Temporal Reprojection")
         col.prop(props, "use_shadow_jitter_viewport", text="Jittered Shadows")
 
         # Add SSS sample count here.
@@ -731,6 +737,12 @@ class RENDER_PT_eevee_sampling_render(RenderButtonsPanel, Panel):
 
         col = layout.column(align=True)
         col.prop(props, "taa_render_samples", text="Samples")
+        col.prop(props, "dlss_render_quality")
+        row = col.row()
+        row.active = props.dlss_render_quality != 'OFF'
+        row.prop(props, "dlss_render_rr")
+        if props.dlss_render_quality != 'OFF':
+            col.label(text="Experimental: Combined only, minimum 32 samples")
 
         # Add SSS sample count here.
 

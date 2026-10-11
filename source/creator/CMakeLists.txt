@@ -336,6 +336,22 @@ if(WITH_PYTHON_MODULE)
 
 else()
   add_executable(blender ${EXETYPE} ${SRC})
+  if(WITH_NVIDIA_DLSS)
+    add_custom_command(TARGET blender POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${NVIDIA_DLSS_ROOT}/lib/Windows_x86_64/rel/nvngx_dlss.dll"
+        "$<TARGET_FILE_DIR:blender>/nvngx_dlss.dll"
+      VERBATIM
+    )
+    if(EXISTS "${NVIDIA_DLSS_ROOT}/lib/Windows_x86_64/rel/nvngx_dlssd.dll")
+      add_custom_command(TARGET blender POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${NVIDIA_DLSS_ROOT}/lib/Windows_x86_64/rel/nvngx_dlssd.dll"
+          "$<TARGET_FILE_DIR:blender>/nvngx_dlssd.dll"
+        VERBATIM)
+    endif()
+  endif()
+
   if(WITH_CPU_CHECK)
     # blender_cpu_check *NEEDS* to be linked first, there can be no exceptions
     # to this, this is to ensure this will be the first code to run once the
@@ -1036,6 +1052,12 @@ if(UNIX AND NOT APPLE)
   endif()
 
 elseif(WIN32)
+  if(WITH_NVIDIA_DLSS)
+    install(FILES "${NVIDIA_DLSS_ROOT}/lib/Windows_x86_64/rel/nvngx_dlss.dll"
+      DESTINATION ".")
+    install(FILES "${NVIDIA_DLSS_ROOT}/lib/Windows_x86_64/rel/nvngx_dlssd.dll"
+      DESTINATION "." OPTIONAL)
+  endif()
   if(WITH_WINDOWS_EXTERNAL_MANIFEST)
     install(
       FILES ${CMAKE_BINARY_DIR}/blender.exe.manifest

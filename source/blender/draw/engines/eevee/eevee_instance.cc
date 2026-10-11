@@ -33,6 +33,8 @@
 #include "RE_pipeline.h"
 
 #include "eevee_instance.hh"
+#include <cstdlib>
+#include "BLI_path_utils.hh"
 
 #include "DNA_particle_types.h"
 
@@ -417,7 +419,10 @@ void Instance::object_sync(ObjectRef &ob_ref, Manager & /*manager*/)
   }
 
   if (partsys_is_visible && ob != draw_ctx->object_edit) {
-    auto sync_hair = [&](const HairParticleInfo &info) { sync.sync_curves(ob_ref, &info); };
+    auto sync_hair = [&](const HairParticleInfo &info) {
+      film.reconstruction().unsupported_geometry();
+      sync.sync_curves(ob_ref, &info);
+    };
     foreach_hair_particle(*this, ob_ref, sync_hair);
   }
 
@@ -431,14 +436,19 @@ void Instance::object_sync(ObjectRef &ob_ref, Manager & /*manager*/)
         if (!sync.sync_sculpt(ob_ref)) {
           sync.sync_mesh(ob_ref);
         }
+        else {
+          film.reconstruction().unsupported_geometry();
+        }
         break;
       case OB_POINTCLOUD:
+        film.reconstruction().unsupported_geometry();
         sync.sync_pointcloud(ob_ref);
         break;
       case OB_VOLUME:
         sync.sync_volume(ob_ref);
         break;
       case OB_CURVES:
+        film.reconstruction().unsupported_geometry();
         sync.sync_curves(ob_ref);
         break;
       case OB_LIGHTPROBE:
@@ -485,6 +495,7 @@ void Instance::end_sync()
   light_probes.end_sync();
   sphere_probes.end_sync();
   planar_probes.end_sync();
+  film.reconstruction().end_sync();
 
   depsgraph_last_update_ = DEG_get_update_count(depsgraph);
 }
@@ -558,6 +569,11 @@ void Instance::render_sample()
        * same step can cause mismatching `has_motion` values between sync. */
       render_sync();
     }
+  }
+
+  if (film.reconstruction().consume_restart()) {
+    film.restart_native();
+    render_sync();
   }
 
   DebugScope debug_scope(debug_scope_render_sample, "EEVEE.render_sample");
@@ -672,27 +688,37 @@ void Instance::render_frame(RenderEngine *engine, RenderLayer *render_layer, con
 
   DebugScope debug_scope(debug_scope_render_frame, "EEVEE.render_frame");
 
-  /* TODO: Break on RE_engine_test_break(engine) */
-  while (!sampling.finished()) {
-    this->render_sample();
+  bool retried_native = false;
+  for (;;) {
+    while (!sampling.finished()) {
+      if ((G.debug & G_DEBUG_GPU) && film.dlss_enabled()) {
+        const char *cancel_at = BLI_getenv("BLENDER_DLSS_TEST_CANCEL_AT");
+        if (cancel_at && sampling.sample_index() >= std::strtoull(cancel_at, nullptr, 10)) {
+          G.is_break = true;
+        }
+      }
+      if (RE_engine_test_break(engine)) {
+        return;
+      }
+      this->render_sample();
 
-    if ((sampling.sample_index() == 1) || ((sampling.sample_index() % 25) == 0) ||
-        sampling.finished())
-    {
-      /* TODO: Use `fmt`. */
-      std::string re_info = "Rendering " + std::to_string(sampling.sample_index()) + " / " +
-                            std::to_string(sampling.sample_count()) + " samples";
-      RE_engine_update_stats(engine, nullptr, re_info.c_str());
-    }
+      if ((sampling.sample_index() == 1) || ((sampling.sample_index() % 25) == 0) ||
+          sampling.finished())
+      {
+        /* TODO: Use `fmt`. */
+        std::string re_info = "Rendering " + std::to_string(sampling.sample_index()) + " / " +
+                              std::to_string(sampling.sample_count()) + " samples";
+        RE_engine_update_stats(engine, nullptr, re_info.c_str());
+      }
 
-    /* Metal: Perform render step between samples to allow flushing of freed GPUBackend resources.
-     * Vulkan: Perform render step between samples to avoid allocation of a high amount of command
-     * buffer memory that can eventually result in out-of-memory errors or a TDR when submitted as
-     * one large command buffer. */
-    if (ELEM(GPU_backend_get_type(), GPU_BACKEND_METAL, GPU_BACKEND_VULKAN)) {
-      GPU_flush();
-    }
-    GPU_render_step();
+      /* Metal: Perform render step between samples to allow flushing of freed GPUBackend
+       * resources. Vulkan: Perform render step between samples to avoid allocation of a high
+       * amount of command buffer memory that can eventually result in out-of-memory errors or a
+       * TDR when submitted as one large command buffer. */
+      if (ELEM(GPU_backend_get_type(), GPU_BACKEND_METAL, GPU_BACKEND_VULKAN)) {
+        GPU_flush();
+      }
+      GPU_render_step();
 
 #if 0
     /* TODO(fclem) print progression. */
@@ -709,6 +735,21 @@ void Instance::render_frame(RenderEngine *engine, RenderLayer *render_layer, con
       DRW_render_context_enable(render->re);
     }
 #endif
+    }
+
+    if (film.dlss_enabled()) {
+      GPU_finish();
+      if (film.reconstruction().failed() && !retried_native) {
+        film.reconstruction().reject("NGX evaluation failed; discarding the reconstructed frame");
+      }
+    }
+    if (film.reconstruction().consume_restart() && !retried_native) {
+      film.restart_native();
+      render_sync();
+      retried_native = true;
+      continue;
+    }
+    break;
   }
 
   this->film.cryptomatte_sort();

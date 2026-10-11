@@ -22,6 +22,19 @@
 
 namespace blender::eevee {
 
+/* Recoverable RT fallback is a viewport notice, not a final-render failure. */
+template<typename... Args>
+static void hardware_notice(Instance &inst, const char *message, Args &&...args)
+{
+  if (inst.is_viewport()) {
+    inst.info_append(message, args...);
+  }
+  else {
+    const std::string text = fmt::format(fmt::runtime(message), args...);
+    fprintf(stderr, "%s\n", text.c_str());
+  }
+}
+
 void RayTracingScene::begin_sync(bool invalidate_materials)
 {
   sync_id_++;
@@ -461,7 +474,7 @@ void HardwareRayTracing::init()
   enabled_ = requested_ && GPU_ray_query_support();
   active = false;
   if (requested_ && !enabled_) {
-    inst_.info_append("Hardware ray tracing unavailable: using screen tracing");
+    hardware_notice(inst_, "Hardware ray tracing unavailable: using screen tracing");
   }
   if (enabled_ && !(capture_shader_ && select_shader_ && resolve_shader_ && trace_shader_ &&
                     irradiance_shader_))
@@ -491,7 +504,7 @@ void HardwareRayTracing::init()
     invalidated_ = true;
   }
   if (requested_ && GPU_ray_query_support() && !enabled_) {
-    inst_.info_append("Hardware ray tracing shader compilation failed: using screen tracing");
+    hardware_notice(inst_, "Hardware ray tracing shader compilation failed: using screen tracing");
   }
 }
 void HardwareRayTracing::begin_sync()
@@ -546,14 +559,14 @@ void HardwareRayTracing::end_sync()
   invalidated_ |= light_count_ != previous_light_count_;
   previous_light_count_ = light_count_;
   if (!scene.ready()) {
-    inst_.info_append("Hardware RT scene build failed: using screen tracing");
+    hardware_notice(inst_, "Hardware RT scene build failed: using screen tracing");
   }
   if (scene.materials.unsupported) {
-    inst_.info_append("Hardware RT: {} materials use cached/probe lighting (outside PBR subset)",
+    hardware_notice(inst_, "Hardware RT: {} materials use cached/probe lighting (outside PBR subset)",
                       scene.materials.unsupported);
   }
   if (scene.skipped_materials) {
-    inst_.info_append("Hardware RT: {} unsupported material slots excluded",
+    hardware_notice(inst_, "Hardware RT: {} unsupported material slots excluded",
                       scene.skipped_materials);
   }
 }
@@ -566,7 +579,7 @@ bool HardwareRayTracing::prepare(draw::View &view, gpu::Texture *emission, gpu::
   }
   const int2 extent = inst_.film.render_extent_get();
   if (!cache.ensure(extent) || !irradiance.ensure()) {
-    inst_.info_append("Hardware RT cache allocation failed: using screen tracing");
+    hardware_notice(inst_, "Hardware RT cache allocation failed: using screen tracing");
     return false;
   }
   if (invalidated_ || scene_revision_ != scene.revision) {
@@ -664,7 +677,7 @@ void HardwareRayTracing::debug_draw(draw::View &view, gpu::Texture *combined)
   pass.dispatch(math::divide_ceil(inst_.film.render_extent_get(), int2(8)));
   pass.barrier(GPU_BARRIER_TEXTURE_FETCH | GPU_BARRIER_SHADER_IMAGE_ACCESS);
   inst_.manager->submit(pass, view);
-  inst_.info_append("Hardware RT: {} BLAS builds, {} TLAS builds, {} MiB scene; red = uncovered",
+  hardware_notice(inst_, "Hardware RT: {} BLAS builds, {} TLAS builds, {} MiB scene; red = uncovered",
                     scene.blas_build_count,
                     scene.tlas_build_count,
                     scene.memory_bytes >> 20);

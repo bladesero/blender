@@ -39,6 +39,7 @@
 #include "draw_pass.hh"
 
 #include "eevee_film_shared.hh"
+#include "eevee_dlss.hh"
 #include "eevee_renderbuffers_shared.hh"
 
 #include <sstream>
@@ -70,6 +71,9 @@ class Film {
 
  private:
   Instance &inst_;
+  int2 native_extent_ = int2(0);
+  rcti native_rect_ = {};
+  DLSSModule dlss_;
 
   /** Incoming combined buffer with post FX applied (motion blur + depth of field). */
   gpu::Texture *combined_final_tx_ = nullptr;
@@ -113,10 +117,14 @@ class Film {
   bool is_valid_render_extent_ = true;
 
  public:
-  Film(Instance &inst, FilmData &data) : inst_(inst), data_(data) {};
+  Film(Instance &inst, FilmData &data) : inst_(inst), dlss_(inst), data_(data) {};
   ~Film() {};
 
   void init(const int2 &full_extent, const rcti *output_rect);
+
+  DLSSModule &reconstruction() { return dlss_; }
+  void restart_native();
+  bool dlss_enabled() const { return dlss_.enabled(); }
 
   void sync();
   void end_sync();

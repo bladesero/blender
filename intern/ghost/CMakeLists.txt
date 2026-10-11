@@ -96,6 +96,12 @@ if(WITH_VULKAN_BACKEND)
   add_definitions(-DWITH_VULKAN_BACKEND)
 endif()
 
+if(WITH_NVIDIA_DLSS)
+  list(APPEND INC_SYS ${NVIDIA_DLSS_ROOT}/include)
+  list(APPEND LIB ${NVIDIA_DLSS_LIBRARY})
+  add_definitions(-DWITH_NVIDIA_DLSS)
+endif()
+
 if(WITH_GHOST_DEBUG)
   list(APPEND SRC
     intern/GHOST_EventPrinter.cc

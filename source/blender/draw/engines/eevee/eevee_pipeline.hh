@@ -240,6 +240,7 @@ class ForwardPipeline {
 
  public:
   ForwardPipeline(Instance &inst) : inst_(inst) {}
+  bool reconstruction_unsupported() const { return has_opaque_ || has_transparent_ || has_holdout_; }
 
   void sync();
   void end_sync();
