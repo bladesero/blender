@@ -274,6 +274,15 @@ class ObjectRef {
     return 1;
   }
 
+  /** Distinguish recreated source or instancer IDs even if their addresses are reused. */
+  uint64_t instance_generation() const
+  {
+    const uint64_t source_uid = DEG_get_original(object)->id.session_uid;
+    const uint64_t parent_uid = dupli_parent_ ? DEG_get_original(dupli_parent_)->id.session_uid :
+                                                0;
+    return (source_uid << 32) | parent_uid;
+  }
+
   float4x4 object_to_world(int instance_index) const
   {
     if (is_range()) {

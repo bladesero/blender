@@ -112,6 +112,8 @@ class VKDescriptorSetUpdator {
                            const VKBufferWithOffset &push_constants_buffer);
 
  protected:
+  virtual void bind_acceleration_structure(VkAccelerationStructureKHR handle,
+                                           VKDescriptorSet::Location location) = 0;
   virtual void bind_texel_buffer(VKVertexBuffer &vertex_buffer,
                                  VKDescriptorSet::Location location) = 0;
   virtual void bind_buffer(VkDescriptorType vk_descriptor_type,
@@ -139,6 +141,8 @@ class VKDescriptorSetPoolUpdator : public VKDescriptorSetUpdator {
   void upload_descriptor_sets() override;
 
  protected:
+  void bind_acceleration_structure(VkAccelerationStructureKHR handle,
+                                   VKDescriptorSet::Location location) override;
   void bind_texel_buffer(VKVertexBuffer &vertex_buffer,
                          VKDescriptorSet::Location location) override;
   void bind_buffer(VkDescriptorType vk_descriptor_type,
@@ -153,6 +157,7 @@ class VKDescriptorSetPoolUpdator : public VKDescriptorSetUpdator {
                   VKDescriptorSet::Location location) override;
 
  private:
+  Vector<VkAccelerationStructureKHR> acceleration_structures_;
   Vector<VkBufferView> vk_buffer_views_;
   Vector<VkDescriptorBufferInfo> vk_descriptor_buffer_infos_;
   Vector<VkDescriptorImageInfo> vk_descriptor_image_infos_;

@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include "GPU_acceleration_structure.hh"
+
 /** \file
  * \ingroup draw
  *
@@ -171,6 +173,7 @@ struct ResourceBind {
     BufferSampler,
     Image,
     UniformBuf,
+    AccelerationStructure,
     StorageBuf,
     UniformAsStorageBuf,
     VertexAsStorageBuf,
@@ -182,6 +185,8 @@ struct ResourceBind {
      * debug info. */
     gpu::UniformBuf *uniform_buf;
     gpu::UniformBuf **uniform_buf_ref;
+    gpu::AccelerationStructure *acceleration_structure;
+    gpu::AccelerationStructure **acceleration_structure_ref;
     gpu::StorageBuf *storage_buf;
     gpu::StorageBuf **storage_buf_ref;
     /** NOTE: Texture is used for both Sampler and Image binds. */
@@ -194,6 +199,11 @@ struct ResourceBind {
   };
 
   ResourceBind() = default;
+  ResourceBind(int slot_, gpu::AccelerationStructure **res)
+      : slot(slot_),
+        is_reference(true),
+        type(Type::AccelerationStructure),
+        acceleration_structure_ref(res) {};
 
   ResourceBind(int slot_, gpu::UniformBuf *res)
       : slot(slot_), is_reference(false), type(Type::UniformBuf), uniform_buf(res) {};

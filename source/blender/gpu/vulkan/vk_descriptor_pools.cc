@@ -50,6 +50,9 @@ void VKDescriptorPools::ensure_pool(const VKDevice &device)
       {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, POOL_SIZE_UNIFORM_BUFFER},
       {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, POOL_SIZE_UNIFORM_TEXEL_BUFFER},
       {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, POOL_SIZE_INPUT_ATTACHMENT}};
+  if (device.extensions_get().ray_query) {
+    pool_sizes.append({VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, POOL_SIZE_DESCRIPTOR_SETS});
+  }
   VkDescriptorPoolCreateInfo pool_info = {};
   pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
   pool_info.maxSets = POOL_SIZE_DESCRIPTOR_SETS;

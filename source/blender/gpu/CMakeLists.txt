@@ -97,6 +97,7 @@ set(SRC
   intern/gpu_shader_log.cc
   intern/gpu_shader_preprocessor.cc
   intern/gpu_state.cc
+  intern/gpu_acceleration_structure.cc
   intern/gpu_storage_buffer.cc
   intern/gpu_texture.cc
   intern/gpu_texture_mipmap.cc
@@ -153,6 +154,7 @@ set(SRC
   GPU_shader_builtin.hh
   GPU_shader_shared.hh
   GPU_state.hh
+  GPU_acceleration_structure.hh
   GPU_storage_buffer.hh
   GPU_texture.hh
   GPU_texture_pool.hh
@@ -287,6 +289,7 @@ set(VULKAN_SRC
   vulkan/vk_shader_module.cc
   vulkan/vk_staging_buffer.cc
   vulkan/vk_state_manager.cc
+  vulkan/vk_acceleration_structure.cc
   vulkan/vk_storage_buffer.cc
   vulkan/vk_streaming_buffer.cc
   vulkan/vk_texture.cc
@@ -365,6 +368,7 @@ set(VULKAN_SRC
   vulkan/vk_shader_module.hh
   vulkan/vk_staging_buffer.hh
   vulkan/vk_state_manager.hh
+  vulkan/vk_acceleration_structure.hh
   vulkan/vk_storage_buffer.hh
   vulkan/vk_streaming_buffer.hh
   vulkan/vk_texture.hh
@@ -584,6 +588,7 @@ set(GLSL_SRC
   shaders/common/gpu_shader_attribute_load_lib.glsl
   shaders/common/gpu_shader_bicubic_sampler_lib.glsl
   shaders/common/gpu_shader_common_color_ramp.glsl
+  shaders/common/gpu_shader_ray_query_lib.glsl
   shaders/common/gpu_shader_common_color_utils.glsl
   shaders/common/gpu_shader_common_curves.glsl
   shaders/common/gpu_shader_common_hash.glsl
@@ -757,6 +762,7 @@ set(GLSL_TEST_SRC
   shaders/infos/gpu_shader_test_infos.hh
 
   tests/shaders/gpu_math_test.bsl.hh
+  tests/shaders/gpu_ray_query_test.bsl.hh
   tests/shaders/gpu_buffer_texture_test.glsl
   tests/shaders/gpu_compute_1d_test.glsl
   tests/shaders/gpu_compute_2d_test.glsl
@@ -942,6 +948,7 @@ if(WITH_GTESTS)
     list(APPEND TEST_SRC
       tests/buffer_texture_test.cc
       tests/compute_test.cc
+      tests/ray_query_test.cc
       tests/framebuffer_test.cc
       tests/immediate_test.cc
       tests/index_buffer_test.cc

@@ -411,6 +411,9 @@ class RENDER_PT_eevee_raytracing(RenderButtonsPanel, Panel):
 
         col = layout.column()
         col.prop(props, "ray_tracing_method", text="Method")
+        if props.ray_tracing_method == 'HARDWARE':
+            col.label(text="Experimental: Vulkan, opaque meshes", icon='INFO')
+            col.label(text="Uncached surfaces use light probes")
 
         options = context.scene.eevee.ray_tracing_options
 
@@ -438,7 +441,7 @@ class RENDER_PT_eevee_screen_trace(RenderButtonsPanel, Panel):
 
         props = context.scene.eevee.ray_tracing_options
 
-        use_screen_trace = (context.scene.eevee.ray_tracing_method == 'SCREEN')
+        use_screen_trace = (context.scene.eevee.ray_tracing_method in {'SCREEN', 'HARDWARE'})
 
         col = layout.column()
         sub = col.column(align=False)

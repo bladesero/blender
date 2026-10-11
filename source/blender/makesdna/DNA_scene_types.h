@@ -2583,6 +2583,7 @@ enum RaytraceEEVEE_Method : int {
   /* NOTE: Each method contains the previous one. */
   RAYTRACE_EEVEE_METHOD_PROBE = 0,
   RAYTRACE_EEVEE_METHOD_SCREEN = 1,
+  RAYTRACE_EEVEE_METHOD_HARDWARE = 2,
   /* TODO(fclem): Hardware ray-tracing. */
   // RAYTRACE_EEVEE_METHOD_HARDWARE = 2,
 };

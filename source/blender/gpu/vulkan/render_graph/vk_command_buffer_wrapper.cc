@@ -18,6 +18,15 @@ VKCommandBufferWrapper::VKCommandBufferWrapper(VkCommandBuffer vk_command_buffer
   use_dynamic_rendering_local_read = extensions.dynamic_rendering_local_read;
 }
 
+void VKCommandBufferWrapper::build_acceleration_structure(
+    const VkAccelerationStructureBuildGeometryInfoKHR &info,
+    const VkAccelerationStructureBuildRangeInfoKHR &range)
+{
+  const VkAccelerationStructureBuildRangeInfoKHR *ranges = &range;
+  VKBackend::get().device.functions.vkCmdBuildAccelerationStructuresKHR(
+      vk_command_buffer_, 1, &info, &ranges);
+}
+
 void VKCommandBufferWrapper::begin_recording()
 {
   VkCommandBufferBeginInfo vk_command_buffer_begin_info = {

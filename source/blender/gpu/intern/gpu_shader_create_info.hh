@@ -982,6 +982,12 @@ struct ShaderCreateInfo {
           slot(_slot),
           conditions(cond ? Conditions(cond) : Conditions()) {};
 
+    /** AS resources share the buffer binding namespace, but use an opaque descriptor. */
+    bool is_acceleration_structure() const
+    {
+      return bind_type == STORAGE_BUFFER && storagebuf.type_name == "accelerationStructureEXT";
+    }
+
     bool operator==(const Resource &b) const
     {
       TEST_EQUAL(*this, b, bind_type);
@@ -1349,6 +1355,24 @@ struct ShaderCreateInfo {
     resources_get_(freq).append(res);
     interface_names_size_ += name.size() + 1;
     return *static_cast<Self *>(this);
+  }
+
+  bool requires_ray_query() const
+  {
+    for (const Resource &resource : resources_get_all_()) {
+      if (resource.is_acceleration_structure()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Self &acceleration_structure(int slot,
+                               StringRefNull name,
+                               Frequency freq = Frequency::PASS,
+                               ConditionFn cond = nullptr)
+  {
+    return storage_buf(slot, Qualifier::read, "accelerationStructureEXT", name, freq, cond);
   }
 
   Self &image(int slot,

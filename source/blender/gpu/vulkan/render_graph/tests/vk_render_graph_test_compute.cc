@@ -10,6 +10,77 @@ namespace blender::gpu::render_graph {
 
 class VKRenderGraphTestCompute : public VKRenderGraphTest {};
 
+TEST_F(VKRenderGraphTestCompute, acceleration_structure_dependencies)
+{
+  const VkBuffer vertices = VkHandle<VkBuffer>(1);
+  const VkBuffer scratch = VkHandle<VkBuffer>(2);
+  const VkBuffer blas = VkHandle<VkBuffer>(3);
+  const VkBuffer tlas = VkHandle<VkBuffer>(4);
+  for (VkBuffer buffer : {vertices, scratch, blas, tlas}) {
+    resources.add_buffer(buffer);
+  }
+  VKFillBufferNode::CreateInfo upload = {};
+  upload.vk_buffer = vertices;
+  upload.size = 256;
+  render_graph->add_node(upload);
+  VKBuildAccelerationStructureData build;
+  build.destination = blas;
+  build.scratch = scratch;
+  build.inputs.append(vertices);
+  build.range.primitiveCount = 3;
+  build.info.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+  render_graph->add_node(build);
+  build.destination = tlas;
+  build.bottom_levels.append(blas);
+  build.range.primitiveCount = 1;
+  render_graph->add_node(build);
+
+  VKResourceAccessInfo access;
+  access.buffers.append({tlas, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR});
+  access.buffers.append({blas, VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR});
+  VKDispatchNode::CreateInfo dispatch(access);
+  dispatch.dispatch_node.pipeline_data.vk_pipeline = VkHandle<VkPipeline>(5);
+  dispatch.dispatch_node.pipeline_data.vk_pipeline_layout = VkHandle<VkPipelineLayout>(6);
+  dispatch.dispatch_node.pipeline_data.vk_descriptor_set = VkHandle<VkDescriptorSet>(7);
+  dispatch.dispatch_node.group_count_x = 1;
+  dispatch.dispatch_node.group_count_y = 1;
+  dispatch.dispatch_node.group_count_z = 1;
+  render_graph->add_node(dispatch);
+  submit(render_graph, command_buffer);
+
+  int blas_index = -1, tlas_index = -1, trace_index = -1;
+  bool upload_barrier = false, build_barrier = false, query_barrier = false;
+  for (int i : log.index_range()) {
+    const std::string &entry = log[i];
+    if (entry == "build_acceleration_structure(primitives=3)") {
+      blas_index = i;
+    }
+    if (entry == "build_acceleration_structure(primitives=1)") {
+      tlas_index = i;
+    }
+    if (entry == "dispatch(group_count_x=1, group_count_y=1, group_count_z=1)") {
+      trace_index = i;
+    }
+    auto contains = [&](const char *text) { return entry.find(text) != std::string::npos; };
+    upload_barrier |= contains("src_access_mask=VK_ACCESS_TRANSFER_WRITE_BIT") &&
+                      contains(
+                          "dst_stage_mask=VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR");
+    build_barrier |= blas_index >= 0 && tlas_index < 0 &&
+                     contains("VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR") &&
+                     contains(
+                         "dst_stage_mask=VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR");
+    query_barrier |= tlas_index >= 0 && trace_index < 0 &&
+                     contains("VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR") &&
+                     contains("dst_stage_mask=VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT");
+  }
+  EXPECT_GE(blas_index, 0);
+  EXPECT_GT(tlas_index, blas_index);
+  EXPECT_GT(trace_index, tlas_index);
+  EXPECT_TRUE(upload_barrier);
+  EXPECT_TRUE(build_barrier);
+  EXPECT_TRUE(query_barrier);
+}
+
 TEST_F(VKRenderGraphTestCompute, dispatch_read_back)
 {
   VkHandle<VkBuffer> buffer(1u);

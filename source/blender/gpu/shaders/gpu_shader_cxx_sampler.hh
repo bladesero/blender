@@ -12,6 +12,8 @@
 
 #include "gpu_shader_cxx_vector.hh"
 
+struct accelerationStructureEXT {};
+
 /* Some compilers complain about lack of return values. Keep it short. */
 #define RET \
   { \

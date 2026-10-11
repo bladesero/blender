@@ -227,6 +227,8 @@ void SyncModule::sync_mesh(const ObjectRef &ob_ref)
     return;
   }
 
+  inst_.raytracing.hardware.sync_mesh(ob_handle, material_array);
+
   Vector<Material *, 8> synced_materials;
 
   for (auto i : material_array.gpu_materials.index_range()) {

@@ -366,7 +366,9 @@ static void print_resource(std::ostream &os,
   else if (res.bind_type == ShaderCreateInfo::Resource::BindType::UNIFORM_BUFFER) {
     os << ", std140";
   }
-  else if (res.bind_type == ShaderCreateInfo::Resource::BindType::STORAGE_BUFFER) {
+  else if (res.bind_type == ShaderCreateInfo::Resource::BindType::STORAGE_BUFFER &&
+           !res.is_acceleration_structure())
+  {
     os << ", std430";
   }
   os << ") ";
@@ -389,6 +391,10 @@ static void print_resource(std::ostream &os,
          << "; };";
       break;
     case ShaderCreateInfo::Resource::BindType::STORAGE_BUFFER:
+      if (res.is_acceleration_structure()) {
+        os << "uniform accelerationStructureEXT " << res.storagebuf.name << ";";
+        break;
+      }
       print_qualifier(os, res.storagebuf.qualifiers);
       os << "buffer _" << res.storagebuf.name.str_no_array() << " { "
          << info.buffer_typename(res.storagebuf.type_name) << " " << res.storagebuf.name << "; };";

@@ -44,6 +44,10 @@ class StorageBuf {
     return usage_size_in_bytes_;
   }
   virtual void update(const void *data) = 0;
+  virtual bool ensure_allocated()
+  {
+    return false;
+  }
   virtual void bind(int slot) = 0;
   virtual void unbind() = 0;
   virtual void clear(uint32_t clear_value) = 0;

@@ -69,6 +69,11 @@ enum [[host_shared]] eDebugMode : uint32_t {
    * Color different buffers of the depth of field.
    */
   DEBUG_DOF_PLANES = 16u,
+  DEBUG_HARDWARE_RT_NORMAL = 18u,
+  DEBUG_HARDWARE_RT_DISTANCE = 19u,
+  DEBUG_HARDWARE_RT_INSTANCE = 20u,
+  DEBUG_HARDWARE_RT_COVERAGE = 21u,
+  DEBUG_HARDWARE_RT_IRRADIANCE = 22u,
 };
 
 #ifndef GPU_SHADER

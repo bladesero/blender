@@ -342,6 +342,10 @@ void VKShaderInterface::descriptor_set_location_update(
         break;
 
       case shader::ShaderCreateInfo::Resource::BindType::STORAGE_BUFFER:
+        if (resource->is_acceleration_structure()) {
+          vk_access_flags = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR;
+          break;
+        }
         if (flag_is_set(resource->storagebuf.qualifiers, shader::Qualifier::read)) {
           vk_access_flags |= VK_ACCESS_SHADER_READ_BIT;
         }

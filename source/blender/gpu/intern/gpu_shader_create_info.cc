@@ -789,7 +789,8 @@ bool gpu_shader_create_info_compile_all(const char *name_starts_with_filter)
         skipped_filter++;
         continue;
       }
-      if ((info->metal_backend_only_ && GPU_backend_get_type() != GPU_BACKEND_METAL) ||
+      if ((info->requires_ray_query() && !GPU_ray_query_support()) ||
+          (info->metal_backend_only_ && GPU_backend_get_type() != GPU_BACKEND_METAL) ||
           (GPU_geometry_shader_support() == false && info->geometry_source_ != nullptr))
       {
         skipped++;

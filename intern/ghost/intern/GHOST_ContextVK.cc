@@ -214,6 +214,12 @@ class GHOST_DeviceVK {
   VkPhysicalDeviceRobustness2FeaturesEXT features_robustness2 = {
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT};
 
+  VkPhysicalDeviceAccelerationStructureFeaturesKHR features_acceleration_structure = {
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR};
+  VkPhysicalDeviceRayQueryFeaturesKHR features_ray_query = {
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR};
+  bool ray_query_enabled = false;
+
   int users = 0;
 
   /** Mutex to externally synchronize access to queue. */
@@ -236,6 +242,8 @@ class GHOST_DeviceVK {
     features.pNext = &features_11;
     features_11.pNext = &features_12;
     features_12.pNext = &features_robustness2;
+    features_robustness2.pNext = &features_acceleration_structure;
+    features_acceleration_structure.pNext = &features_ray_query;
 
     vkGetPhysicalDeviceFeatures2(vk_physical_device, &features);
     init_extensions();
@@ -535,6 +543,19 @@ struct GHOST_InstanceVK {
     device.extensions.enable(required_device_extensions);
     device.extensions.enable(optional_device_extensions, true);
 
+    /* Enable RT as an optional group. Never enable AS without its dependencies. */
+    const blender::Vector<const char *> ray_query_extensions = {
+        VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+        VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+        VK_KHR_RAY_QUERY_EXTENSION_NAME};
+    device.ray_query_enabled = device.features_12.bufferDeviceAddress &&
+                               device.features_acceleration_structure.accelerationStructure &&
+                               device.features_ray_query.rayQuery &&
+                               device.extensions.is_supported(ray_query_extensions);
+    if (device.ray_query_enabled) {
+      device.extensions.enable(ray_query_extensions);
+    }
+
     /* Disabling pipeline libraries and dynamic vertex input on AMD drivers due to random crashes
      * that are also happening when enabling the extension, but not using it at all. This needs
      * more investigation as it could be related to development workflows.
@@ -625,6 +646,17 @@ struct GHOST_InstanceVK {
     vulkan_12_features.bufferDeviceAddress = device.features_12.bufferDeviceAddress;
     vulkan_12_features.timelineSemaphore = VK_TRUE;
     feature_struct_ptr.push_back(&vulkan_12_features);
+
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR acceleration_structure_features = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR};
+    VkPhysicalDeviceRayQueryFeaturesKHR ray_query_features = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR};
+    if (device.ray_query_enabled) {
+      acceleration_structure_features.accelerationStructure = VK_TRUE;
+      ray_query_features.rayQuery = VK_TRUE;
+      feature_struct_ptr.push_back(&acceleration_structure_features);
+      feature_struct_ptr.push_back(&ray_query_features);
+    }
 
 #ifndef __APPLE__
     /* Enable provoking vertex. */
@@ -1149,6 +1181,7 @@ GHOST_TSuccess GHOST_ContextVK::getVulkanHandles(GHOST_VulkanHandles &r_handles)
         device_vk.generic_queue,
         &device_vk.queue_mutex,
         device_vk.vma_allocator,
+        device_vk.ray_query_enabled,
     };
   }
 

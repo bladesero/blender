@@ -7,6 +7,7 @@
  */
 
 #include "vk_descriptor_set.hh"
+#include "vk_acceleration_structure.hh"
 #include "vk_buffer.hh"
 #include "vk_index_buffer.hh"
 #include "vk_shader.hh"
@@ -83,6 +84,10 @@ void VKDescriptorSetTracker::update_resource_access_info_binding_storage_buffer(
       resource_binding.binding);
   VkBuffer vk_buffer = VK_NULL_HANDLE;
   switch (elem.resource_type) {
+    case BindSpaceStorageBuffers::Type::AccelerationStructure: {
+      static_cast<VKAccelerationStructure *>(elem.resource)->add_dependencies(access_info);
+      return;
+    }
     case BindSpaceStorageBuffers::Type::IndexBuffer: {
       VKIndexBuffer *index_buffer = static_cast<VKIndexBuffer *>(elem.resource);
       index_buffer->ensure_updated();
@@ -409,6 +414,12 @@ void VKDescriptorSetUpdator::bind_storage_buffer_resource(
   VkBuffer vk_buffer = VK_NULL_HANDLE;
   VkDeviceSize vk_device_size = 0;
   switch (elem.resource_type) {
+    case BindSpaceStorageBuffers::Type::AccelerationStructure: {
+      bind_acceleration_structure(
+          static_cast<VKAccelerationStructure *>(elem.resource)->vk_handle(),
+          resource_binding.location);
+      return;
+    }
     case BindSpaceStorageBuffers::Type::IndexBuffer: {
       VKIndexBuffer *index_buffer = static_cast<VKIndexBuffer *>(elem.resource);
       vk_buffer = index_buffer->vk_handle();
@@ -536,6 +547,18 @@ void VKDescriptorSetPoolUpdator::allocate_new_descriptor_set(
   r_pipeline_data.vk_descriptor_set = vk_descriptor_set;
 }
 
+void VKDescriptorSetPoolUpdator::bind_acceleration_structure(VkAccelerationStructureKHR handle,
+                                                             VKDescriptorSet::Location location)
+{
+  acceleration_structures_.append(handle);
+  VkWriteDescriptorSet write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+  write.dstSet = vk_descriptor_set;
+  write.dstBinding = location;
+  write.descriptorCount = 1;
+  write.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+  vk_write_descriptor_sets_.append(write);
+}
+
 void VKDescriptorSetPoolUpdator::bind_buffer(VkDescriptorType vk_descriptor_type,
                                              VkBuffer vk_buffer,
                                              VkDeviceSize buffer_offset,
@@ -603,11 +626,22 @@ void VKDescriptorSetPoolUpdator::upload_descriptor_sets()
   }
 
   /* Finalize pointers that could have changed due to reallocations. */
+  Array<VkWriteDescriptorSetAccelerationStructureKHR> acceleration_infos(
+      acceleration_structures_.size());
+  int acceleration_index = 0;
   int buffer_index = 0;
   int buffer_view_index = 0;
   int image_index = 0;
   for (VkWriteDescriptorSet &vk_write_descriptor_set : vk_write_descriptor_sets_) {
     switch (vk_write_descriptor_set.descriptorType) {
+      case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: {
+        auto &info = acceleration_infos[acceleration_index];
+        info = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR};
+        info.accelerationStructureCount = 1;
+        info.pAccelerationStructures = &acceleration_structures_[acceleration_index++];
+        vk_write_descriptor_set.pNext = &info;
+        break;
+      }
       case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
       case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
       case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
@@ -643,6 +677,8 @@ void VKDescriptorSetPoolUpdator::upload_descriptor_sets()
     for (VkWriteDescriptorSet &vk_write_descriptor_set : vk_write_descriptor_sets_) {
       descriptor_set_count.add(vk_write_descriptor_set.dstSet);
       switch (vk_write_descriptor_set.descriptorType) {
+        case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+          break;
         case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
           combined_image_sampler_count += 1;
           break;
@@ -684,6 +720,7 @@ void VKDescriptorSetPoolUpdator::upload_descriptor_sets()
                          0,
                          nullptr);
 
+  acceleration_structures_.clear();
   vk_descriptor_image_infos_.clear();
   vk_descriptor_buffer_infos_.clear();
   vk_buffer_views_.clear();

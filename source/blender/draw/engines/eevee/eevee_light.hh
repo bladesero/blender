@@ -197,6 +197,12 @@ class LightModule {
   void shape_display_draw(View &view, gpu::FrameBuffer *view_fb);
   void debug_draw(View &view, gpu::FrameBuffer *view_fb);
 
+  template<typename PassType> void bind_raytrace_resources(PassType &pass)
+  {
+    pass.bind_ssbo("rt_lights", &light_buf_);
+    pass.push_constant("rt_light_count", &lights_len_);
+  }
+
   template<typename PassType> void bind_resources(PassType &pass)
   {
     pass.bind_ssbo(LIGHT_CULL_BUF_SLOT, &culling_data_buf_);

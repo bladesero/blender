@@ -443,6 +443,7 @@ bool MTLBackend::metal_is_supported()
 
 void MTLBackend::capabilities_init(MTLContext *ctx)
 {
+  GCaps.ray_query_support = false;
   BLI_assert(ctx);
   id<MTLDevice> device = ctx->device;
   BLI_assert(device);

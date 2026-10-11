@@ -424,6 +424,7 @@ void Instance::object_sync(ObjectRef &ob_ref, Manager & /*manager*/)
   if (object_is_visible) {
     switch (ob->type) {
       case OB_LAMP:
+        raytracing.hardware.sync_light(get_recalc_flags(ob_ref) != 0);
         lights.sync_light(ob_ref);
         break;
       case OB_MESH:
@@ -470,6 +471,7 @@ void Instance::end_sync()
     loaded_shaders |= shaders.static_shaders_wait_ready(request_bits);
   }
 
+  raytracing.hardware.end_sync();
   materials.end_sync();
   velocity.end_sync();
   volume.end_sync();  /* Needs to be before shadows. */

@@ -147,6 +147,7 @@ void VKDevice::init(GHOST_IContext *ghost_context)
   vk_queue_ = handles.queue;
   mem_allocator_ = handles.vma_allocator;
   queue_mutex_ = static_cast<std::mutex *>(handles.queue_mutex);
+  extensions_.ray_query = handles.ray_query_enabled;
 
   init_physical_device_extensions();
   init_physical_device_properties();
@@ -176,6 +177,15 @@ void VKDevice::init(GHOST_IContext *ghost_context)
 void VKDevice::init_functions()
 {
 #define LOAD_FUNCTION(name) (PFN_##name) vkGetInstanceProcAddr(vk_instance_, STRINGIFY(name))
+  if (extensions_.ray_query) {
+#define LOAD_RT_FUNCTION(name) functions.name = (PFN_##name)vkGetDeviceProcAddr(vk_device_, #name)
+    LOAD_RT_FUNCTION(vkCreateAccelerationStructureKHR);
+    LOAD_RT_FUNCTION(vkDestroyAccelerationStructureKHR);
+    LOAD_RT_FUNCTION(vkGetAccelerationStructureBuildSizesKHR);
+    LOAD_RT_FUNCTION(vkGetAccelerationStructureDeviceAddressKHR);
+    LOAD_RT_FUNCTION(vkCmdBuildAccelerationStructuresKHR);
+#undef LOAD_RT_FUNCTION
+  }
   /* VK_KHR_dynamic_rendering */
   functions.vkCmdBeginRendering = LOAD_FUNCTION(vkCmdBeginRenderingKHR);
   functions.vkCmdEndRendering = LOAD_FUNCTION(vkCmdEndRenderingKHR);
@@ -319,7 +329,12 @@ shader::GeneratedSource VKDevice::extensions_define(StringRefNull stage_define) 
 {
   std::stringstream ss;
 
-  ss << "#version 450\n";
+  /* GL_EXT_ray_query requires GLSL 4.60, even for a compute entry point. */
+  ss << (extensions_.ray_query ? "#version 460\n" : "#version 450\n");
+  if (extensions_.ray_query) {
+    ss << "#extension GL_EXT_ray_query : enable\n";
+    ss << "#define GPU_RAY_QUERY 1\n";
+  }
   {
     /* Required extension. */
     ss << "#extension GL_ARB_shader_draw_parameters : enable\n";

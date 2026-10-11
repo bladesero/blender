@@ -36,6 +36,15 @@ class CommandBufferLog : public VKCommandBufferInterface {
   }
   virtual ~CommandBufferLog() {}
 
+  void build_acceleration_structure(const VkAccelerationStructureBuildGeometryInfoKHR &info,
+                                    const VkAccelerationStructureBuildRangeInfoKHR &range) override
+  {
+    EXPECT_TRUE(is_recording_);
+    EXPECT_NE(info.pGeometries, nullptr);
+    log_.append("build_acceleration_structure(primitives=" + std::to_string(range.primitiveCount) +
+                ")");
+  }
+
   void begin_recording() override
   {
     EXPECT_FALSE(is_recording_);

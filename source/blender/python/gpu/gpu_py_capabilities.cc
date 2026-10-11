@@ -329,6 +329,18 @@ static PyObject *pygpu_hdr_support_get(PyObject * /*self*/)
   return PyBool_FromLong(GPU_hdr_support());
 }
 
+PyDoc_STRVAR(pygpu_ray_query_support_get_doc,
+             ".. function:: ray_query_support_get()\n"
+             "\n"
+             "   Return whether the active GPU backend supports hardware ray queries.\n"
+             "\n"
+             "   :rtype: bool\n");
+static PyObject *pygpu_ray_query_support_get(PyObject * /*self*/)
+{
+  BPYGPU_IS_INIT_OR_ERROR_OBJ;
+  return PyBool_FromLong(GPU_ray_query_support());
+}
+
 PyDoc_STRVAR(
     /* Wrap. */
     pygpu_max_work_group_count_get_doc,
@@ -465,6 +477,10 @@ static PyMethodDef pygpu_capabilities__tp_methods[] = {
      reinterpret_cast<PyCFunction>(pygpu_hdr_support_get),
      METH_NOARGS,
      pygpu_hdr_support_get_doc},
+    {"ray_query_support_get",
+     reinterpret_cast<PyCFunction>(pygpu_ray_query_support_get),
+     METH_NOARGS,
+     pygpu_ray_query_support_get_doc},
     {
         "max_work_group_count_get",
         static_cast<PyCFunction>(pygpu_max_work_group_count_get),

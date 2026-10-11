@@ -47,6 +47,7 @@ struct VKExtensions {
    * VkPhysicalDeviceFeatures::wideLines
    */
   bool wide_lines = false;
+  bool ray_query = false;
 
   /**
    * Does the device support VK_KHR_dynamic_rendering_local_read enabled.
@@ -244,6 +245,12 @@ class VKDevice : public NonCopyable {
    */
   struct {
     /* Extension: VK_KHR_dynamic_rendering */
+    PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = nullptr;
+    PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR = nullptr;
+    PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR = nullptr;
+    PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR =
+        nullptr;
+    PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR = nullptr;
     PFN_vkCmdBeginRendering vkCmdBeginRendering = nullptr;
     PFN_vkCmdEndRendering vkCmdEndRendering = nullptr;
 

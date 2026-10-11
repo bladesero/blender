@@ -62,6 +62,8 @@ bool GPU_use_main_context_workaround();
 bool GPU_use_hq_normals_workaround();
 
 bool GPU_geometry_shader_support();
+/** Hardware acceleration structures and inline ray queries on the active device. */
+bool GPU_ray_query_support();
 bool GPU_hdr_support();
 bool GPU_stencil_export_support();
 

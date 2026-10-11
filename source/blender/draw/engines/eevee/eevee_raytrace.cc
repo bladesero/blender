@@ -62,14 +62,18 @@ void RayTraceModule::init()
 {
   const SceneEEVEE &sce_eevee = inst_.scene->eevee;
 
+  hardware.init();
   ray_tracing_options_ = sce_eevee.ray_tracing_options;
-  if ((sce_eevee.flag & SCE_EEVEE_FAST_GI_ENABLED) == 0) {
+  if ((sce_eevee.flag & SCE_EEVEE_FAST_GI_ENABLED) == 0 || hardware.enabled()) {
     ray_tracing_options_.trace_max_roughness = 1.0f;
   }
   /* Always initialize thickness, for the ray-cast node. */
   data_.thickness = ray_tracing_options_.screen_trace_thickness;
 
   tracing_method_ = RaytraceEEVEE_Method(sce_eevee.ray_tracing_method);
+  if (tracing_method_ == RAYTRACE_EEVEE_METHOD_HARDWARE) {
+    tracing_method_ = RAYTRACE_EEVEE_METHOD_SCREEN;
+  }
   fast_gi_ray_count_ = sce_eevee.fast_gi_ray_count;
   fast_gi_step_count_ = sce_eevee.fast_gi_step_count;
   fast_gi_ao_only_ = (sce_eevee.fast_gi_method == FAST_GI_AO_ONLY);
@@ -83,6 +87,7 @@ void RayTraceModule::init()
 
 void RayTraceModule::sync()
 {
+  hardware.begin_sync();
   Texture &depth_tx = inst_.render_buffers.depth_tx;
 
   if (!use_raytracing_) {
@@ -172,6 +177,7 @@ void RayTraceModule::sync()
         sh, "trace_refraction", reinterpret_cast<bool *>(&data_.trace_refraction));
     pass.specialize_constant(sh, "closure_index", &data_.closure_index);
     pass.shader_set(sh);
+    pass.push_constant("hardware_opaque_trace", &hardware.active);
     pass.bind_ssbo("tiles_coord_buf", &raytrace_tracing_tiles_buf_);
     pass.bind_image("ray_data_img", &ray_data_tx_);
     pass.bind_image("ray_time_img", &ray_time_tx_);
@@ -185,6 +191,28 @@ void RayTraceModule::sync()
     pass.bind_image("ray_radiance_img", &ray_radiance_tx_);
     pass.bind_resources(inst_.uniform_data);
     pass.bind_resources(inst_.sampling);
+    pass.bind_resources(inst_.volume_probes);
+    pass.bind_resources(inst_.sphere_probes);
+    pass.bind_resources(inst_.gbuffer);
+    pass.dispatch(raytrace_tracing_dispatch_buf_);
+    pass.barrier(GPU_BARRIER_SHADER_IMAGE_ACCESS);
+  }
+  if (hardware.enabled()) {
+    PassSimple &pass = trace_hardware_ps_;
+    pass.init();
+    gpu::Shader *sh = hardware.trace_shader();
+    pass.specialize_constant(sh, "closure_index", &data_.closure_index);
+    pass.shader_set(sh);
+    pass.bind_ssbo("tiles_coord_buf", &raytrace_tracing_tiles_buf_);
+    pass.bind_image("ray_data_img", &ray_data_tx_);
+    pass.bind_image("ray_time_img", &ray_time_tx_);
+    pass.bind_image("ray_radiance_img", &ray_radiance_tx_);
+    pass.bind_texture("depth_tx", &depth_tx);
+    hardware.bind_resources(pass);
+    inst_.lights.bind_raytrace_resources(pass);
+    pass.bind_ubo("rt_sunlight", &inst_.world.sunlight);
+    pass.bind_texture(RBUFS_UTILITY_TEX_SLOT, inst_.pipelines.utility_tx);
+    pass.bind_resources(inst_.uniform_data);
     pass.bind_resources(inst_.volume_probes);
     pass.bind_resources(inst_.sphere_probes);
     pass.bind_resources(inst_.gbuffer);
@@ -479,6 +507,15 @@ RayTraceResult RayTraceModule::render(RayTraceBuffer &rt_buffer,
 {
   using namespace blender::math;
   BLI_assert(use_raytracing_);
+  if (rt_buffer.hardware_history_active != bool(hardware.active) ||
+      (hardware.active && rt_buffer.hardware_history_revision != hardware.history_revision()))
+  {
+    for (auto &closure : rt_buffer.closures) {
+      closure.valid_history = false;
+    }
+    rt_buffer.hardware_history_active = bool(hardware.active);
+    rt_buffer.hardware_history_revision = hardware.history_revision();
+  }
 
   screen_radiance_front_tx_ = rt_buffer.radiance_feedback_tx.is_valid() ?
                                   rt_buffer.radiance_feedback_tx :
@@ -702,6 +739,9 @@ RayTraceResultTexture RayTraceModule::trace(int closure_index,
         inst_.manager->submit(trace_planar_ps_, render_view);
       }
       inst_.manager->submit(trace_screen_ps_, render_view);
+      if (hardware.active) {
+        inst_.manager->submit(trace_hardware_ps_, render_view);
+      }
     }
     else {
       inst_.manager->submit(trace_fallback_ps_, render_view);

@@ -112,6 +112,10 @@ set(SRC
   engines/eevee/eevee_motion_blur.cc
   engines/eevee/eevee_pipeline.cc
   engines/eevee/eevee_precompute.cc
+  engines/eevee/eevee_raytrace_material.cc
+  engines/eevee/eevee_raytrace_material.hh
+  engines/eevee/eevee_raytrace_hardware.cc
+  engines/eevee/eevee_raytrace_hardware.hh
   engines/eevee/eevee_raytrace.cc
   engines/eevee/eevee_renderbuffers.cc
   engines/eevee/eevee_sampling.cc
@@ -438,6 +442,7 @@ set(GLSL_SRC
   engines/eevee/shaders/eevee_ray_denoise.bsl.hh
   engines/eevee/shaders/eevee_ray_generate.bsl.hh
   engines/eevee/shaders/eevee_ray_tile.bsl.hh
+  engines/eevee/shaders/eevee_raytrace_hardware.bsl.hh
   engines/eevee/shaders/eevee_ray_trace.bsl.hh
   engines/eevee/shaders/eevee_ray_trace_screen_lib.bsl.hh
   engines/eevee/shaders/eevee_ray_types_lib.bsl.hh

@@ -24,6 +24,9 @@ class VKCommandBufferInterface {
   VKCommandBufferInterface() {}
   virtual ~VKCommandBufferInterface() = default;
 
+  virtual void build_acceleration_structure(
+      const VkAccelerationStructureBuildGeometryInfoKHR &info,
+      const VkAccelerationStructureBuildRangeInfoKHR &range) = 0;
   virtual void begin_recording() = 0;
   virtual void end_recording() = 0;
 
@@ -160,6 +163,9 @@ class VKCommandBufferWrapper : public VKCommandBufferInterface {
  public:
   VKCommandBufferWrapper(VkCommandBuffer vk_command_buffer, const VKExtensions &extensions);
 
+  void build_acceleration_structure(
+      const VkAccelerationStructureBuildGeometryInfoKHR &info,
+      const VkAccelerationStructureBuildRangeInfoKHR &range) override;
   void begin_recording() override;
   void end_recording() override;
 

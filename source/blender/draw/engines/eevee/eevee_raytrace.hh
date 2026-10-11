@@ -15,6 +15,7 @@
 #include "DRW_gpu_wrapper.hh"
 #include "DRW_render.hh"
 
+#include "eevee_raytrace_hardware.hh"
 #include "eevee_raytrace_shared.hh"
 
 namespace blender::eevee {
@@ -57,6 +58,8 @@ struct RayTraceBuffer {
    * One for each closure. Not to be mistaken with deferred layer type.
    */
   DenoiseBuffer closures[3];
+  uint64_t hardware_history_revision = 0;
+  bool hardware_history_active = false;
 
   /**
    * Radiance feedback of the deferred layer for next sample's reflection or next layer's
@@ -150,6 +153,7 @@ class RayTraceModule {
   draw::PassSimple generate_ps_ = {"RayGenerate"};
   draw::PassSimple trace_planar_ps_ = {"Trace.Planar"};
   draw::PassSimple trace_screen_ps_ = {"Trace.Screen"};
+  draw::PassSimple trace_hardware_ps_ = {"Trace.Hardware"};
   draw::PassSimple trace_fallback_ps_ = {"Trace.Fallback"};
   draw::PassSimple denoise_spatial_ps_ = {"DenoiseSpatial"};
   draw::PassSimple denoise_temporal_ps_ = {"DenoiseTemporal"};
@@ -242,7 +246,9 @@ class RayTraceModule {
   RayTraceData &data_;
 
  public:
-  RayTraceModule(Instance &inst, RayTraceData &data) : inst_(inst), data_(data) {};
+  HardwareRayTracing hardware;
+
+  RayTraceModule(Instance &inst, RayTraceData &data) : inst_(inst), data_(data), hardware(inst) {};
 
   void init();
 

@@ -23,6 +23,7 @@ namespace screen {
 struct Resources {
   [[specialization_constant(0)]] int closure_index;
   [[specialization_constant(true)]] bool trace_refraction;
+  [[push_constant]] const bool hardware_opaque_trace;
 
   [[storage(5, read)]] const uint (&tiles_coord_buf)[];
 
@@ -87,6 +88,10 @@ void trace([[resource_table]] Resources &srt,
   gbuffer::Header gbuf_header = reader.read_header(texel_fullres);
   ClosureType closure_type = gbuffer::mode_to_closure_type(
       gbuf_header.bin_type(srt.closure_index));
+  if (srt.hardware_opaque_trace && !closure_has_transmission(closure_type)) {
+    /* These rays are resolved by the following hardware query dispatch. */
+    return;
+  }
 
   float depth = reverse_z::read(texelFetch(srt.depth_tx, texel_fullres, 0).r);
   float2 uv = (float2(texel_fullres) + 0.5f) * uni.raytrace_buf.full_resolution_inv;

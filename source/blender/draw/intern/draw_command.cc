@@ -97,6 +97,9 @@ void ResourceBind::execute() const
     case ResourceBind::Type::UniformBuf:
       GPU_uniformbuf_bind(is_reference ? *uniform_buf_ref : uniform_buf, slot);
       break;
+    case ResourceBind::Type::AccelerationStructure:
+      (is_reference ? *acceleration_structure_ref : acceleration_structure)->bind(slot);
+      break;
     case ResourceBind::Type::StorageBuf:
       GPU_storagebuf_bind(is_reference ? *storage_buf_ref : storage_buf, slot);
       break;
@@ -429,6 +432,8 @@ std::string ResourceBind::serialize() const
     case Type::UniformBuf:
       return std::string(".bind_uniform_buf") + (is_reference ? "_ref" : "") + "(" +
              std::to_string(slot) + ")";
+    case Type::AccelerationStructure:
+      return ".bind_acceleration_structure(" + std::to_string(slot) + ")";
     case Type::StorageBuf:
       return std::string(".bind_storage_buf") + (is_reference ? "_ref" : "") + "(" +
              std::to_string(slot) + ")";

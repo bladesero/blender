@@ -205,6 +205,11 @@ size_t GPU_storage_buffer_alignment()
 /** \name Memory statistics
  * \{ */
 
+bool GPU_ray_query_support()
+{
+  return GCaps.ray_query_support;
+}
+
 bool GPU_mem_stats_supported()
 {
   return GCaps.mem_stats_support;

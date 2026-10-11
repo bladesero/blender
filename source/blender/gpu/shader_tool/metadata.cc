@@ -33,6 +33,10 @@ std::string ParsedResource::serialize() const
       ss << ".additional_info(\"" << var_type << "\")";
     }
   }
+  else if (res_type == "acceleration_structure") {
+    ss << ".acceleration_structure(" << res_slot << ", \"" << var_name
+       << "\", Frequency::" << res_frequency << res_condition_lambda << ")";
+  }
   else if (res_type == "sampler") {
     ss << ".sampler(" << res_slot;
     ss << ", ImageType::" << var_type;

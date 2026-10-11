@@ -14,6 +14,53 @@
 namespace blender::eevee {
 #endif
 
+struct [[host_shared]] HardwareRTInstance {
+  float4x4 world_to_object;
+  /* stable instance ID, triangle offset, geometry generation, material-map offset. */
+  uint4 identity;
+  /* Receiver light set, blocker shadow set. */
+  uint4 linking;
+};
+
+struct [[host_shared]] HardwareRTTriangle {
+  /* Corner shading normals and UV x; UV y is stored separately. */
+  float4 corner0;
+  float4 corner1;
+  float4 corner2;
+  float4 uv_y;
+  uint4 material;
+};
+
+struct [[host_shared]] HardwareRTParameter {
+  float4 value;
+  /* Pixel offset, width, height, extension/interpolation/channel flags; width=0: constant. */
+  uint4 texture;
+};
+
+struct [[host_shared]] HardwareRTMaterial {
+  struct HardwareRTParameter base_color;
+  struct HardwareRTParameter roughness;
+  struct HardwareRTParameter metallic;
+  struct HardwareRTParameter emission;
+  struct HardwareRTParameter emission_strength;
+  /* IOR, specular level, supported, pure diffuse/emission. */
+  float4 properties;
+};
+
+struct [[host_shared]] HardwareIrradianceProbe {
+  /* World position and cell size. */
+  float4 position;
+  /* World normal and validity. */
+  float4 normal;
+  /* Exact signed cell coordinate and normal octant. */
+  int4 key;
+};
+
+struct [[host_shared]] HardwareRadianceEntry {
+  uint4 key;
+  float4 radiance;
+};
+
 struct [[host_shared]] ScreenThicknessParameters {
   float thickness_ndc_scale;
   float thickness_ndc_bias;

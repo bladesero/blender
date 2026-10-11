@@ -419,6 +419,12 @@ std::string to_string_vk_access_flags(const VkAccessFlags vk_access_flags)
   if (vk_access_flags & VK_ACCESS_SHADER_WRITE_BIT) {
     ss << STRINGIFY(VK_ACCESS_SHADER_WRITE_BIT) << ", ";
   }
+  if (vk_access_flags & VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR) {
+    ss << STRINGIFY(VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR) << ", ";
+  }
+  if (vk_access_flags & VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR) {
+    ss << STRINGIFY(VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR) << ", ";
+  }
   if (vk_access_flags & VK_ACCESS_COLOR_ATTACHMENT_READ_BIT) {
     ss << STRINGIFY(VK_ACCESS_COLOR_ATTACHMENT_READ_BIT) << ", ";
   }
@@ -552,6 +558,9 @@ std::string to_string_vk_pipeline_stage_flags(const VkPipelineStageFlags vk_pipe
   }
   if (vk_pipeline_stage_flags & VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT) {
     ss << STRINGIFY(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT) << ", ";
+  }
+  if (vk_pipeline_stage_flags & VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR) {
+    ss << STRINGIFY(VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR) << ", ";
   }
   if (vk_pipeline_stage_flags & VK_PIPELINE_STAGE_TRANSFER_BIT) {
     ss << STRINGIFY(VK_PIPELINE_STAGE_TRANSFER_BIT) << ", ";

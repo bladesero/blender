@@ -81,6 +81,11 @@ void GPU_storagebuf_free(gpu::StorageBuf *ssbo)
   delete ssbo;
 }
 
+bool GPU_storagebuf_ensure_allocated(gpu::StorageBuf *ssbo)
+{
+  return ssbo && ssbo->ensure_allocated();
+}
+
 void GPU_storagebuf_usage_size_set(gpu::StorageBuf *ssbo, size_t usage_size)
 {
   ssbo->usage_size_set(usage_size);

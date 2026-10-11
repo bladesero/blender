@@ -403,6 +403,7 @@ class DeferredLayer : DeferredLayerBase {
   bool use_split_radiance_ = true;
   /* Output radiance from the combine shader instead of copy. Allow passing unclamped result. */
   bool use_feedback_output_ = false;
+  bool hardware_opaque_layer_ = false;
   bool use_raytracing_ = false;
   bool use_screen_transmission_ = false;
   bool use_screen_reflection_ = false;
@@ -420,7 +421,10 @@ class DeferredLayer : DeferredLayerBase {
   }
 
   void begin_sync();
-  void end_sync(bool is_first_pass, bool is_last_pass, bool next_layer_has_transmission);
+  void end_sync(bool is_first_pass,
+                bool is_last_pass,
+                bool next_layer_has_transmission,
+                bool hardware_opaque_layer = false);
 
   PassMain::Sub *prepass_add(blender::Material *blender_mat,
                              GPUMaterial *gpumat,

@@ -70,11 +70,12 @@ void VKStorageBuffer::update(const void *data)
   }
 }
 
-void VKStorageBuffer::ensure_allocated()
+bool VKStorageBuffer::ensure_allocated()
 {
   if (!buffer_.is_allocated()) {
     allocate();
   }
+  return buffer_.is_allocated();
 }
 
 void VKStorageBuffer::allocate()
@@ -109,7 +110,9 @@ void VKStorageBuffer::unbind()
 
 void VKStorageBuffer::clear(uint32_t clear_value)
 {
-  ensure_allocated();
+  if (!ensure_allocated()) {
+    return;
+  }
   VKContext &context = *VKContext::get();
   buffer_.clear(context, clear_value);
 }

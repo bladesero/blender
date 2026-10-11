@@ -58,7 +58,7 @@ class VKStorageBuffer : public StorageBuf {
     return offset_;
   }
 
-  void ensure_allocated();
+  bool ensure_allocated() override;
 
  private:
   void allocate();

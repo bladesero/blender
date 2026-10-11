@@ -11,6 +11,7 @@
 #include "nodes/vk_begin_query_node.hh"
 #include "nodes/vk_begin_rendering_node.hh"
 #include "nodes/vk_blit_image_node.hh"
+#include "nodes/vk_build_acceleration_structure_node.hh"
 #include "nodes/vk_clear_attachments_node.hh"
 #include "nodes/vk_clear_color_image_node.hh"
 #include "nodes/vk_clear_depth_stencil_image_node.hh"
@@ -48,6 +49,7 @@ using NodeHandle = uint64_t;
  *
  */
 struct VKRenderGraphStorage {
+  Vector<VKBuildAccelerationStructureNode::Data> build_acceleration_structure;
   Vector<VKBeginRenderingNode::Data, 1024> begin_rendering;
   Vector<VKClearAttachmentsNode::Data, 1024> clear_attachments;
   Vector<VKBlitImageNode::Data, 1024> blit_image;
@@ -62,6 +64,7 @@ struct VKRenderGraphStorage {
 
   void reset()
   {
+    build_acceleration_structure.clear_and_shrink();
     begin_rendering.clear_and_shrink();
     clear_attachments.clear_and_shrink();
     blit_image.clear_and_shrink();
@@ -159,6 +162,8 @@ struct VKRenderGraphNode {
     switch (type) {
       case VKNodeType::UNUSED:
         return VK_PIPELINE_STAGE_NONE;
+      case VKNodeType::BUILD_ACCELERATION_STRUCTURE:
+        return VKBuildAccelerationStructureNode::pipeline_stage;
       case VKNodeType::BEGIN_QUERY:
         return VKBeginQueryNode::pipeline_stage;
       case VKNodeType::BEGIN_RENDERING:
@@ -242,6 +247,9 @@ struct VKRenderGraphNode {
     break; \
   }
 
+        BUILD_COMMANDS_STORAGE(VKNodeType::BUILD_ACCELERATION_STRUCTURE,
+                               VKBuildAccelerationStructureNode,
+                               build_acceleration_structure)
         BUILD_COMMANDS(VKNodeType::BEGIN_QUERY, VKBeginQueryNode, begin_query)
         BUILD_COMMANDS_STORAGE(VKNodeType::BEGIN_RENDERING, VKBeginRenderingNode, begin_rendering)
         BUILD_COMMANDS_STORAGE(
@@ -294,6 +302,7 @@ struct VKRenderGraphNode {
 #undef FREE_DATA
 
       case VKNodeType::UNUSED:
+      case VKNodeType::BUILD_ACCELERATION_STRUCTURE:
       case VKNodeType::BEGIN_QUERY:
       case VKNodeType::BEGIN_RENDERING:
       case VKNodeType::CLEAR_ATTACHMENTS:

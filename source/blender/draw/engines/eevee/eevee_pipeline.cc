@@ -814,8 +814,10 @@ bool DeferredLayer::do_split_direct_indirect_radiance(const Instance &inst)
 
 void DeferredLayer::end_sync(bool is_first_pass,
                              bool is_last_pass,
-                             bool next_layer_has_transmission)
+                             bool next_layer_has_transmission,
+                             bool hardware_opaque_layer)
 {
+  hardware_opaque_layer_ = hardware_opaque_layer;
   prepass_.end_sync();
 
   const bool has_any_closure = closure_bits_ != 0;
@@ -1064,6 +1066,7 @@ gpu::Texture *DeferredLayer::render(View &render_view,
                                     RayTraceBuffer &rt_buffer,
                                     gpu::Texture *radiance_behind_tx)
 {
+  inst_.raytracing.hardware.active = false;
   if (closure_count_ == 0) {
     return radiance_behind_tx;
   }
@@ -1107,6 +1110,19 @@ gpu::Texture *DeferredLayer::render(View &render_view,
                                        usage_rw);
   }
 
+  const bool early_direct = use_raytracing_ && hardware_opaque_layer_ &&
+                            inst_.raytracing.hardware.enabled();
+  if (early_direct) {
+    /* Direct-only specialization does not consume indirect results. Keep valid dummy bindings. */
+    indirect_result_ = inst_.raytracing.alloc_dummy(rt_buffer);
+    GPU_framebuffer_bind(combined_fb);
+    inst_.manager->submit(eval_light_ps_, render_view);
+    gpu::Texture *direct[] = {
+        direct_radiance_txs_[0], direct_radiance_txs_[1], direct_radiance_txs_[2]};
+    inst_.raytracing.hardware.prepare(render_view, rb.combined_tx, direct);
+    indirect_result_.release();
+  }
+
   if (use_raytracing_) {
     indirect_result_ = inst_.raytracing.render(
         rt_buffer, radiance_behind_tx, closure_bits_, render_view);
@@ -1118,8 +1134,10 @@ gpu::Texture *DeferredLayer::render(View &render_view,
     indirect_result_ = inst_.raytracing.alloc_dummy(rt_buffer);
   }
 
-  GPU_framebuffer_bind(combined_fb);
-  inst_.manager->submit(eval_light_ps_, render_view);
+  if (!early_direct) {
+    GPU_framebuffer_bind(combined_fb);
+    inst_.manager->submit(eval_light_ps_, render_view);
+  }
 
   inst_.subsurface.render(
       direct_radiance_txs_[0], indirect_result_.closures[0], closure_bits_, render_view);
@@ -1147,6 +1165,9 @@ gpu::Texture *DeferredLayer::render(View &render_view,
   }
 
   inst_.pipelines.deferred.debug_draw(render_view, combined_fb);
+  if (hardware_opaque_layer_) {
+    inst_.raytracing.hardware.debug_draw(render_view, rb.combined_tx);
+  }
 
   return use_feedback_output_ ? radiance_feedback_tx_ : nullptr;
 }
@@ -1169,7 +1190,8 @@ void DeferredPipeline::end_sync()
 {
   Instance &inst = opaque_layer_.inst_;
 
-  opaque_layer_.end_sync(true, refraction_layer_.is_empty(), refraction_layer_.has_transmission());
+  opaque_layer_.end_sync(
+      true, refraction_layer_.is_empty(), refraction_layer_.has_transmission(), true);
   refraction_layer_.end_sync(opaque_layer_.is_empty(), true, false);
 
   inst.pipelines.data.gbuffer_additional_data_layer_id = this->normal_layer_count() - 1;

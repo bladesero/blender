@@ -827,7 +827,8 @@ VkDescriptorType to_vk_descriptor_type(const shader::ShaderCreateInfo::Resource 
     case shader::ShaderCreateInfo::Resource::BindType::SAMPLER:
       return to_vk_descriptor_type_sampler(resource.sampler.type);
     case shader::ShaderCreateInfo::Resource::BindType::STORAGE_BUFFER:
-      return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      return resource.is_acceleration_structure() ? VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR :
+                                                    VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     case shader::ShaderCreateInfo::Resource::BindType::UNIFORM_BUFFER:
       return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   }

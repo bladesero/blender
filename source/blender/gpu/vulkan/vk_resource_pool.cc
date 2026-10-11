@@ -19,6 +19,8 @@ void VKDiscardPool::deinit(VKDevice &device)
 
 void VKDiscardPool::move_data(VKDiscardPool &src_pool, TimelineValue timeline)
 {
+  src_pool.acceleration_structures_.update_timeline(timeline);
+  acceleration_structures_.extend(std::move(src_pool.acceleration_structures_));
   src_pool.allocations_.update_timeline(timeline);
   src_pool.buffer_views_.update_timeline(timeline);
   src_pool.buffers_.update_timeline(timeline);
@@ -39,6 +41,13 @@ void VKDiscardPool::move_data(VKDiscardPool &src_pool, TimelineValue timeline)
   pipeline_layouts_.extend(std::move(src_pool.pipeline_layouts_));
   descriptor_pools_.extend(std::move(src_pool.descriptor_pools_));
   swapchain_images_.extend(std::move(src_pool.swapchain_images_));
+}
+
+void VKDiscardPool::discard_acceleration_structure(
+    VkAccelerationStructureKHR acceleration_structure)
+{
+  std::scoped_lock mutex(mutex_);
+  acceleration_structures_.append_timeline(timeline_, acceleration_structure);
 }
 
 void VKDiscardPool::discard_swapchain_image(VkImage vk_image)
@@ -121,6 +130,9 @@ void VKDiscardPool::destroy_discarded_resources(VKDevice &device, TimelineValue 
     vkDestroyBufferView(device.vk_handle(), vk_buffer_view, nullptr);
   });
 
+  acceleration_structures_.remove_old(current_timeline, [&](VkAccelerationStructureKHR handle) {
+    device.functions.vkDestroyAccelerationStructureKHR(device.vk_handle(), handle, nullptr);
+  });
   buffers_.remove_old(current_timeline, [&](std::pair<VkBuffer, VmaAllocation> buffer_allocation) {
     device.resources.remove_buffer(buffer_allocation.first);
     vmaDestroyBuffer(

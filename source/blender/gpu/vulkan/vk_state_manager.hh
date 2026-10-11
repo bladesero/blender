@@ -120,6 +120,7 @@ class BindSpaceStorageBuffers {
     VertexBuffer,
     IndexBuffer,
     StorageBuffer,
+    AccelerationStructure,
     Buffer,
   };
   struct Elem {

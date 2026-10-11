@@ -792,6 +792,9 @@ Shader *ShaderCompiler::compile(const shader::ShaderCreateInfo &orig_info, bool 
   using namespace blender::gpu::shader;
   const_cast<ShaderCreateInfo &>(orig_info).finalize();
   BLI_assert(orig_info.do_static_compilation_ || orig_info.is_generated_);
+  if (orig_info.requires_ray_query() && !GPU_ray_query_support()) {
+    return nullptr;
+  }
 
   TimePoint start_time;
 

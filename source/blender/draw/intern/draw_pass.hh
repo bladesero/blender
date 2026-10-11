@@ -366,6 +366,7 @@ class PassBase {
   void bind_texture(int slot, gpu::VertBuf *buffer);
   void bind_texture(int slot, gpu::VertBuf **buffer);
   void bind_texture(int slot, gpu::VertBufPtr &buffer);
+  void bind_acceleration_structure(const char *name, gpu::AccelerationStructure **resource);
   void bind_ssbo(const char *name, gpu::StorageBuf *buffer);
   void bind_ssbo(const char *name, gpu::StorageBuf **buffer);
   void bind_ssbo(int slot, gpu::StorageBuf *buffer);
@@ -1210,6 +1211,15 @@ inline void PassBase<T>::material_set(Manager &manager,
 template<class T> inline int PassBase<T>::push_constant_offset(const char *name)
 {
   return GPU_shader_get_uniform(shader_, name);
+}
+
+template<class T>
+inline void PassBase<T>::bind_acceleration_structure(const char *name,
+                                                     gpu::AccelerationStructure **resource)
+{
+  BLI_assert(resource != nullptr);
+  create_command(Type::ResourceBind).resource_bind = {GPU_shader_get_ssbo_binding(shader_, name),
+                                                      resource};
 }
 
 template<class T> inline void PassBase<T>::bind_ssbo(const char *name, gpu::StorageBuf *buffer)

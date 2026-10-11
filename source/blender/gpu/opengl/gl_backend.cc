@@ -626,6 +626,7 @@ bool GLContext::generate_mipmap_workaround = false;
 
 void GLBackend::capabilities_init()
 {
+  GCaps.ray_query_support = false;
   BLI_assert(epoxy_gl_version() >= 33);
   /* Common Capabilities. */
   glGetIntegerv(GL_MAX_TEXTURE_SIZE, &GCaps.max_texture_size);

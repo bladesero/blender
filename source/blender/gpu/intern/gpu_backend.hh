@@ -16,6 +16,7 @@
 #include "GHOST_IContext.hh"
 #include "GHOST_IWindow.hh"
 
+#include "GPU_acceleration_structure.hh"
 #include "GPU_vertex_buffer.hh"
 
 namespace blender::gpu {
@@ -60,6 +61,10 @@ class GPUBackend {
 
   virtual Context *context_alloc(GHOST_IWindow *ghost_window, GHOST_IContext *ghost_context) = 0;
 
+  virtual AccelerationStructurePtr acceleration_structure_alloc()
+  {
+    return nullptr;
+  }
   virtual Batch *batch_alloc() = 0;
   virtual Fence *fence_alloc() = 0;
   virtual FrameBuffer *framebuffer_alloc(const char *name) = 0;

@@ -345,7 +345,7 @@ void SourceProcessor::lower_resource_table(Parser &parser)
         type.line_number(), string(type.str()), string(name.str()), string(array_str)};
     attributes.foreach_scope(ScopeType::Attribute, [&](const Scope &attribute) {
       string_view type = attribute[0].str();
-      if (type == "sampler") {
+      if (type == "sampler" || type == "acceleration_structure") {
         resource.res_type = type;
         resource.res_slot = attribute[2].str();
       }
@@ -501,8 +501,9 @@ void SourceProcessor::lower_resource_table(Parser &parser)
 
   auto is_resource_table_attribute = [](Token attr) {
     string_view type = attr.str();
-    return (type == "sampler" || type == "image" || type == "uniform" || type == "storage" ||
-            type == "shared" || type == "push_constant" || type == "compilation_constant" ||
+    return (type == "acceleration_structure" || type == "sampler" || type == "image" ||
+            type == "uniform" || type == "storage" || type == "shared" ||
+            type == "push_constant" || type == "compilation_constant" ||
             type == "specialization_constant" || type == "legacy_info" ||
             type == "resource_table");
   };

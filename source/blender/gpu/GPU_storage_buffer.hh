@@ -33,6 +33,11 @@ gpu::StorageBuf *GPU_storagebuf_create_ex(size_t size,
 
 void GPU_storagebuf_free(gpu::StorageBuf *ssbo);
 
+/** Optional eager allocation check. Returns false when unsupported or allocation failed.
+ *
+ * Currently implemented for Vulkan, for features which can fall back before dispatching. */
+bool GPU_storagebuf_ensure_allocated(gpu::StorageBuf *ssbo);
+
 /**
  * Limit the size of the storage buffer.
  *

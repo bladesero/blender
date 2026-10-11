@@ -1017,6 +1017,8 @@ struct GHOST_VulkanHandles {
   void *queue_mutex;
   /** Vulkan memory allocator of the device. */
   VmaAllocator vma_allocator;
+  /** Features actually enabled on the logical device, not just physical support. */
+  bool ray_query_enabled = false;
 };
 
 #endif

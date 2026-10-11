@@ -106,6 +106,11 @@ bool VKBuffer::create(size_t size_in_bytes,
     return false;
   }
 
+  if (buffer_usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
+    VkBufferDeviceAddressInfo address_info = {VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO};
+    address_info.buffer = vk_buffer_;
+    vk_device_address = vkGetBufferDeviceAddress(device.vk_handle(), &address_info);
+  }
   device.resources.add_buffer(vk_buffer_);
 
   if (debug_name) {
@@ -251,6 +256,7 @@ void VKBuffer::invalidate_mapped_memory()
 
 bool VKBuffer::free()
 {
+  vk_device_address = 0;
   if (is_mapped()) {
     unmap();
   }
@@ -265,6 +271,7 @@ bool VKBuffer::free()
 
 void VKBuffer::free_immediately(VKDevice &device)
 {
+  vk_device_address = 0;
   BLI_assert(vk_buffer_ != VK_NULL_HANDLE);
   BLI_assert(allocation_ != VK_NULL_HANDLE);
   if (is_mapped()) {

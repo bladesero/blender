@@ -70,6 +70,7 @@ class VKBackend : public GPUBackend {
 
   Context *context_alloc(GHOST_IWindow *ghost_window, GHOST_IContext *ghost_context) override;
 
+  AccelerationStructurePtr acceleration_structure_alloc() override;
   Batch *batch_alloc() override;
   Fence *fence_alloc() override;
   FrameBuffer *framebuffer_alloc(const char *name) override;

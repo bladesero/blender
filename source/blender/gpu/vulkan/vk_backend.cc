@@ -20,6 +20,7 @@
 #include "gpu_capabilities_private.hh"
 #include "gpu_platform_private.hh"
 
+#include "vk_acceleration_structure.hh"
 #include "vk_batch.hh"
 #include "vk_context.hh"
 #include "vk_fence.hh"
@@ -509,6 +510,7 @@ void VKBackend::detect_workarounds(VKDevice &device)
 {
   VKWorkarounds workarounds;
   VKExtensions extensions;
+  GCaps.ray_query_support = false;
 
   if (G.debug & G_DEBUG_GPU_FORCE_WORKAROUNDS) {
     CLOG_WARN(&LOG, "Forcing workarounds and disabling features and extensions");
@@ -541,6 +543,8 @@ void VKBackend::detect_workarounds(VKDevice &device)
   extensions.shader_output_viewport_index =
       device.physical_device_vulkan_12_features_get().shaderOutputViewportIndex;
   extensions.wide_lines = device.physical_device_features_get().wideLines;
+  extensions.ray_query = device.extensions_.ray_query;
+  GCaps.ray_query_support = extensions.ray_query;
   extensions.fragment_shader_barycentric = device.supports_extension(
       VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME);
   extensions.dynamic_rendering_local_read = device.supports_extension(
@@ -733,6 +737,11 @@ Context *VKBackend::context_alloc(GHOST_IWindow *ghost_window, GHOST_IContext *g
       VKContext::openxr_release_framebuffer_image_callback);
 
   return context;
+}
+
+AccelerationStructurePtr VKBackend::acceleration_structure_alloc()
+{
+  return std::make_shared<VKAccelerationStructure>();
 }
 
 Batch *VKBackend::batch_alloc()

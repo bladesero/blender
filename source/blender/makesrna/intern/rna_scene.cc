@@ -8271,6 +8271,12 @@ static void rna_def_scene_eevee(BlenderRNA *brna)
        0,
        "Screen-Trace",
        "Raytrace against the depth buffer. Fallback to light probes for invalid rays."},
+      {RAYTRACE_EEVEE_METHOD_HARDWARE,
+       "HARDWARE",
+       0,
+       "Hardware (Experimental)",
+       "Vulkan hardware reflection and GI using a view-fed surface lighting cache. "
+       "Uncached surfaces use probes; unavailable devices use screen tracing"},
       {0, nullptr, 0, nullptr, nullptr},
   };
 
