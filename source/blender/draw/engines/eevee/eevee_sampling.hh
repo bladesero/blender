@@ -85,8 +85,20 @@ class Sampling {
   /* Viewport Only: Function to call to notify something in the scene changed.
    * This will reset accumulation. Do not call after end_sync() or during sample rendering. */
   void reset();
-  void restart() { sample_ = 0; viewport_sample_ = 0; reset_ = true; }
-  void reconstruction_samples() { sample_count_ = math::max(sample_count_, uint64_t(32)); }
+  void restart()
+  {
+    sample_ = 0;
+    viewport_sample_ = 0;
+    reset_ = true;
+  }
+  void reconstruction_samples(bool preserve_sampling = false)
+  {
+    sample_count_ = math::max(sample_count_, uint64_t(32));
+    if (preserve_sampling) {
+      const uint64_t stride = dof_sample_count_ * motion_blur_steps_;
+      sample_count_ = ((sample_count_ + stride - 1) / stride) * stride;
+    }
+  }
 
   /* Viewport Only: true if an update happened in the scene and accumulation needs reset. */
   bool is_reset() const;

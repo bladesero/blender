@@ -321,7 +321,12 @@ bool VKDLSS::evaluate(const DLSSFrame &frame)
       state->result.store(NVSDK_NGX_Result_FAIL_InvalidParameter);
       return false;
     }
+  }
+  {
     for (int i = 0; i < auxiliary.size(); i++) {
+      if (!rr && i != 6) {
+        continue;
+      }
       Texture *texture = auxiliary_textures[i];
       if (texture) {
         if (!valid_size(texture, state->input_size)) {
@@ -344,7 +349,7 @@ bool VKDLSS::evaluate(const DLSSFrame &frame)
       node.inputs.append(r.Resource.ImageViewInfo.Image);
     }
   }
-  if (rr) {
+  {
     for (const auto &r : auxiliary) {
       if (r.Resource.ImageViewInfo.Image != VK_NULL_HANDLE) {
         node.inputs.append(r.Resource.ImageViewInfo.Image);
@@ -427,6 +432,7 @@ bool VKDLSS::evaluate(const DLSSFrame &frame)
       evaluate.InRenderSubrectDimensions = {unsigned(state->input_size.x),
                                             unsigned(state->input_size.y)};
       evaluate.InReset = reset;
+      evaluate.pInBiasCurrentColorMask = frame.bias_current_color_mask ? &auxiliary[6] : nullptr;
       if (rr) {
         NVSDK_NGX_VK_DLSSD_Eval_Params re = {};
         re.pInColor = &c;
@@ -452,8 +458,8 @@ bool VKDLSS::evaluate(const DLSSFrame &frame)
         re.InJitterOffsetY = jitter.y;
         re.InMVScaleX = re.InMVScaleY = 1.0f;
         re.InPreExposure = re.InExposureScale = 1.0f;
-        /* A reconstruction sample has a fixed logical timestep. In particular, final-render
-         * denoising must not depend on machine speed or on a zero/unspecified frame interval. */
+        /* A reconstruction sample has a fixed logical timestep. Final-render denoising must
+         * not depend on machine speed or on a zero/unspecified frame interval. */
         re.InFrameTimeDeltaInMsec = 1000.0f / 60.0f;
         re.InRenderSubrectDimensions = evaluate.InRenderSubrectDimensions;
         re.InReset = reset;

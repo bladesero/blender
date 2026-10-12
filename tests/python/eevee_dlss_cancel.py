@@ -18,13 +18,17 @@ import bpy
 sys.path.insert(0, str(Path(__file__).parent))
 from eevee_dlss_render import make_scene
 
-output = Path(sys.argv[sys.argv.index('--')+1])
+arguments = sys.argv[sys.argv.index('--')+1:]
+output = Path(arguments[arguments.index('--output')+1] if '--output' in arguments else arguments[0]).resolve()
 output.mkdir(parents=True, exist_ok=True)
 scene = make_scene()
 test_cancel = '--complete' not in sys.argv
 scene.eevee.dlss_render_quality = 'QUALITY'
 scene.eevee.dlss_render_rr = '--sr' not in sys.argv
 scene.eevee.taa_render_samples = 64 if test_cancel else 32
+if '--motion-blur' in sys.argv:
+    scene.render.use_motion_blur = True
+    scene.eevee.motion_blur_steps = 2
 if '--blended' in sys.argv:
     scene.eevee.dlss_render_rr = False
     scene.eevee.use_overscan = True
@@ -50,6 +54,7 @@ scene.render.filepath = str(output / 'cancelled.png')
 bpy.context.preferences.view.render_display_type = 'NONE'
 bpy.context.preferences.view.use_save_prompt = False
 state = {'cancelled': False, 'completed': False, 'start': 0}
+initial_time = (scene.frame_current, scene.frame_subframe)
 if test_cancel:
     os.environ['BLENDER_DLSS_TEST_CANCEL_AT'] = '3'
 
@@ -76,6 +81,7 @@ def poll():
             return 0.25
         if test_cancel:
             assert state['cancelled'], state
+            assert (scene.frame_current, scene.frame_subframe) == initial_time
             assert not (output / 'cancelled.png').exists(), 'Cancelled render was saved'
             os.environ.pop('BLENDER_DLSS_TEST_CANCEL_AT', None)
             scene.eevee.taa_render_samples = 8

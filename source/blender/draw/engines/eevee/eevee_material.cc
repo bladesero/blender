@@ -214,7 +214,8 @@ MaterialPass MaterialModule::material_pass_get(Object *ob,
                                                blender::Material *blender_mat,
                                                eMaterialPipeline pipeline_type,
                                                eMaterialGeometry geometry_type,
-                                               eMaterialProbe probe_capture)
+                                               eMaterialProbe probe_capture,
+                                               bool reconstruction)
 {
   bNodeTree *ntree = (blender_mat->nodetree != nullptr) ? blender_mat->nodetree :
                                                           default_surface->nodetree;
@@ -282,7 +283,13 @@ MaterialPass MaterialModule::material_pass_get(Object *ob,
     }
   }
 
-  if (is_volume || (is_forward && is_transparent)) {
+  if (reconstruction) {
+    matpass.sub_pass = inst_.pipelines.forward.reconstruction_add(
+        blender_mat, matpass.gpumat, pipeline_type == MAT_PIPE_PREPASS_DEFERRED_VELOCITY);
+    matpass.sub_pass->material_set(
+        *inst_.manager, matpass.gpumat, true, inst_.anisotropic_filtering);
+  }
+  else if (is_volume || (is_forward && is_transparent)) {
     /* Sub pass is generated later. */
     matpass.sub_pass = nullptr;
   }
@@ -396,6 +403,16 @@ Material &MaterialModule::material_sync(const ObjectHandle &ob_handle,
 
       mat.has_surface = GPU_material_has_surface_output(mat.shading.gpumat);
       mat.has_volume = GPU_material_has_volume_output(mat.shading.gpumat);
+      if (mat.has_surface && !hide_on_camera && inst_.film.reconstruction().super_resolution()) {
+        /* Deferred depth shaders retain motion for transparent materials as well. */
+        mat.reconstruction_guide = material_pass_get(
+            ob,
+            blender_mat,
+            has_motion ? MAT_PIPE_PREPASS_DEFERRED_VELOCITY : MAT_PIPE_PREPASS_DEFERRED,
+            geometry_type,
+            MAT_PROBE_NONE,
+            true);
+      }
       if (mat.has_volume && !hide_on_camera) {
         mat.volume_occupancy = material_pass_get(
             ob, blender_mat, MAT_PIPE_VOLUME_OCCUPANCY, geometry_type);

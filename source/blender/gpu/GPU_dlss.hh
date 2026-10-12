@@ -33,7 +33,9 @@ struct DLSSFrame {
   Texture *color_before_transparency = nullptr;
   Texture *transparency_radiance = nullptr, *transparency_opacity = nullptr;
   Texture *transparency_motion = nullptr, *subsurface_guide = nullptr;
-  Texture *disocclusion_mask = nullptr, *bias_current_color_mask = nullptr;
+  Texture *disocclusion_mask = nullptr;
+  /* SR and RR: optional input-resolution current-color preference, not a correctness guarantee. */
+  Texture *bias_current_color_mask = nullptr;
   float4x4 world_to_view = float4x4::identity();
   float4x4 view_to_clip = float4x4::identity();
   float2 jitter = float2(0);

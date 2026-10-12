@@ -79,6 +79,7 @@ void SyncModule::sync_common_passes(const Material &material,
   sync_cb(material.shadow);
   sync_cb(material.shading);
   sync_cb(material.prepass);
+  sync_cb(material.reconstruction_guide);
 
   sync_cb(material.capture);
   sync_cb(material.lightprobe_sphere_prepass);

@@ -92,7 +92,8 @@ struct [[host_shared]] PipelineInfoData {
   /* True if the pipeline can use the raycast node.
    * The value is valid only if `MAT_RAYCAST` is defined. */
   bool32_t can_raycast;
-  bool32_t _pad1;
+  /* Deterministic coverage for SR guides, never enabled for shading or shadows. */
+  bool32_t use_reconstruction_guide;
   bool32_t _pad2;
 };
 

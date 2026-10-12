@@ -62,9 +62,19 @@ struct Prepare {
   [[sampler(0)]] sampler2D input_color;
   [[sampler(1)]] sampler2DDepth input_depth;
   [[sampler(2)]] sampler2D input_vector;
+  [[sampler(3)]] sampler2D previous_color;
+  [[sampler(4)]] sampler2D previous_depth;
+  [[sampler(5)]] sampler2D effect_base;
+  [[sampler(6)]] sampler2D effect_risk;
+  [[sampler(7)]] sampler2D current_color;
+  [[push_constant]] bool use_effect_risk;
+  [[push_constant]] bool history_valid;
+  [[push_constant]] float2 history_jitter_delta;
   [[image(0, write, SFLOAT_16_16_16_16)]] image2D sr_color;
   [[image(1, write, SFLOAT_32)]] image2D sr_depth;
   [[image(2, write, SFLOAT_32_32)]] image2D sr_motion;
+  [[image(3, write, SFLOAT_16)]] image2D sr_coverage;
+  [[image(4, write, UNORM_8)]] image2D sr_bias;
 };
 
 [[compute, local_size(8, 8)]]
@@ -86,12 +96,86 @@ void prepare([[resource_table]] Prepare &srt,
   if (any(isnan(motion)) || any(isinf(motion))) {
     motion = float2(0.0f);
   }
-  float3 color = srt.integrated ?
-                     reconstruction_color(srt.input_color, float2(src) - srt.jitter).rgb :
-                     texelFetch(srt.input_color, src, 0).rgb;
-  imageStore(srt.sr_color, dst, float4(color, 1.0f));
+  float4 color = srt.integrated ? reconstruction_color(srt.input_color, float2(src) - srt.jitter) :
+                                  texelFetch(srt.input_color, src, 0);
+  imageStore(srt.sr_color, dst, float4(color.rgb, 1.0f));
   imageStore(srt.sr_depth, dst, float4(depth));
   imageStore(srt.sr_motion, dst, float4(motion, 0.0f, 0.0f));
+  float opacity = saturate(1.0f - color.a);
+  imageStore(srt.sr_coverage, dst, float4(opacity));
+  float bias = 4.0f * opacity * (1.0f - opacity);
+  if (srt.use_effect_risk) {
+    float3 base = texelFetch(srt.effect_base, src, 0).rgb;
+    float3 current = texelFetch(srt.current_color, src, 0).rgb;
+    float change = length(current - base) / (0.1f + length(current) + length(base));
+    bias = max(bias, max(texelFetch(srt.effect_risk, src, 0).r, saturate(change * 4.0f)));
+  }
+  if (srt.history_valid) {
+    int2 previous = int2(round(float2(dst) + motion + srt.history_jitter_delta));
+    if (any(lessThan(previous, int2(0))) || any(greaterThanEqual(previous, size))) {
+      bias = 1.0f;
+    }
+    else {
+      float3 old_color = texelFetch(srt.previous_color, previous, 0).rgb;
+      float old_depth = texelFetch(srt.previous_depth, previous, 0).r;
+      float delta = length(color.rgb - old_color) / (0.1f + length(color.rgb) + length(old_color));
+      bias = max(bias, saturate(4.0f * delta));
+      bias = max(bias, saturate(abs(old_depth - depth) * 100.0f));
+    }
+  }
+  imageStore(srt.sr_bias, dst, float4(bias));
+}
+
+struct Risk {
+  [[image(0, read_write, UNORM_8)]] image2D risk;
+};
+[[compute, local_size(8, 8)]]
+void risk([[resource_table]] Risk &srt,
+          [[resource_table]] const gbuffer::Reader &reader,
+          [[global_invocation_id]] const uint3 id)
+{
+  int2 p = int2(id.xy);
+  if (any(greaterThanEqual(p, imageSize(srt.risk)))) {
+    return;
+  }
+  gbuffer::Layers layers = reader.read_layers(p);
+  for (int i = 0; i < 3; i++) {
+    if (layers.layer[i].type == CLOSURE_BSDF_MICROFACET_GGX_REFRACTION_ID) {
+      imageStore(srt.risk, p, float4(1));
+    }
+  }
+}
+
+struct Alpha {
+  [[sampler(0)]] sampler2D sr_output;
+  [[sampler(1)]] sampler2D coverage;
+  [[push_constant]] float2 jitter;
+  [[image(0, write, SFLOAT_16_16_16_16)]] image2D composited;
+};
+[[compute, local_size(8, 8)]]
+void alpha([[resource_table]] Alpha &srt, [[global_invocation_id]] const uint3 id)
+{
+  int2 p = int2(id.xy), size = imageSize(srt.composited);
+  if (any(greaterThanEqual(p, size))) {
+    return;
+  }
+  int2 low_size = textureSize(srt.coverage, 0);
+  float2 coordinate = (float2(p) + 0.5f) * float2(low_size) / float2(size) - 0.5f + srt.jitter;
+  int2 base = int2(floor(coordinate));
+  float2 f = fract(coordinate);
+  float a = 0.0f, lo = 1.0f, hi = 0.0f;
+  for (int y = -1; y <= 2; y++) {
+    for (int x = -1; x <= 2; x++) {
+      float v = texelFetch(srt.coverage, clamp(base + int2(x, y), int2(0), low_size - 1), 0).r;
+      a += reconstruction_weight(float(x) - f.x) * reconstruction_weight(float(y) - f.y) * v;
+      if (x >= 0 && x <= 1 && y >= 0 && y <= 1) {
+        lo = min(lo, v);
+        hi = max(hi, v);
+      }
+    }
+  }
+  imageStore(
+      srt.composited, p, float4(texelFetch(srt.sr_output, p, 0).rgb, saturate(clamp(a, lo, hi))));
 }
 
 struct SubsurfaceGuide {
@@ -216,6 +300,7 @@ void hit([[resource_table]] Hit &srt,
   imageStore(srt.rr_hit, int2(src.x, size.y - 1 - src.y), float4(distance));
 }
 struct Output {
+  [[push_constant]] bool opaque;
   [[push_constant]] int2 crop;
   [[sampler(0)]] sampler2D sr_output;
   [[image(0, write, SFLOAT_16_16_16_16)]] image2D final_output;
@@ -227,14 +312,14 @@ void resolve_output([[resource_table]] Output &srt, [[global_invocation_id]] con
   if (any(greaterThanEqual(dst, size))) {
     return;
   }
-  imageStore(srt.final_output,
-             dst,
-             float4(texelFetch(srt.sr_output,
-                               int2(dst.x + srt.crop.x,
-                                    textureSize(srt.sr_output, 0).y - 1 - dst.y - srt.crop.y),
-                               0)
-                        .rgb,
-                    1.0f));
+  float4 color = texelFetch(
+      srt.sr_output,
+      int2(dst.x + srt.crop.x, textureSize(srt.sr_output, 0).y - 1 - dst.y - srt.crop.y),
+      0);
+  if (srt.opaque) {
+    color.a = 1.0f;
+  }
+  imageStore(srt.final_output, dst, color);
 }
 
 struct Blend {
@@ -301,6 +386,7 @@ void before_transparency([[resource_table]] BeforeTransparency &srt,
 }
 
 struct Display {
+  [[push_constant]] bool opaque;
   [[push_constant]] int2 crop;
   [[sampler(0)]] sampler2D sr_output;
   [[sampler(1)]] sampler2D sr_depth;
@@ -322,7 +408,10 @@ void display([[resource_table]] const Display &srt,
   int2 size = textureSize(srt.sr_output, 0);
   int2 dst = int2(frag.xy);
   int2 src = int2(dst.x + srt.crop.x, size.y - 1 - dst.y - srt.crop.y);
-  out.color = float4(texelFetch(srt.sr_output, src, 0).rgb, 1.0f);
+  out.color = texelFetch(srt.sr_output, src, 0);
+  if (srt.opaque) {
+    out.color.a = 1.0f;
+  }
   int2 depth_size = textureSize(srt.sr_depth, 0);
   float2 uv = (float2(src) + 0.5f) / float2(size);
   int2 depth_src = int2(uv * float2(depth_size) + float2(srt.sr_jitter.x, -srt.sr_jitter.y));
@@ -334,6 +423,8 @@ void display([[resource_table]] const Display &srt,
 }  // namespace eevee::dlss
 
 PipelineCompute eevee_dlss_prepare(eevee::dlss::prepare);
+PipelineCompute eevee_dlss_alpha(eevee::dlss::alpha);
+PipelineCompute eevee_dlss_risk(eevee::dlss::risk);
 PipelineGraphic eevee_dlss_display(eevee::dlss::fullscreen, eevee::dlss::display);
 
 PipelineCompute eevee_dlss_guides(eevee::dlss::guides);

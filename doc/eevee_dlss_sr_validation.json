@@ -1,0 +1,1739 @@
+{
+  "date": "2026-10-12",
+  "base_commit": "3542c253ecd",
+  "gpu": "NVIDIA GeForce RTX 4070 SUPER",
+  "driver": "610.88",
+  "sdk": "310.4",
+  "build": "Release Windows Vulkan",
+  "evidence_root": "E:\\gitrepo\\dlss_universal_validation",
+  "suites": {
+    "final_quality": [
+      {
+        "case": "PBR",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true
+      },
+      {
+        "case": "SHADER_RGB",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true
+      },
+      {
+        "case": "EMISSION",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true
+      },
+      {
+        "case": "NORMAL",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true
+      },
+      {
+        "case": "SSS",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true
+      },
+      {
+        "case": "TRANSLUCENT",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true
+      },
+      {
+        "case": "DITHERED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true
+      },
+      {
+        "case": "BLENDED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true
+      },
+      {
+        "case": "COLORED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true
+      },
+      {
+        "case": "GLASS",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true
+      },
+      {
+        "case": "HOLDOUT",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true
+      },
+      {
+        "case": "VOLUME",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true
+      },
+      {
+        "case": "SURFACE_VOLUME",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true
+      },
+      {
+        "case": "ALPHA",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true
+      },
+      {
+        "case": "DOF",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true
+      },
+      {
+        "case": "MOTION_BLUR",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true,
+          "single_evaluation": true
+        },
+        "evaluations": 1,
+        "passed": true
+      },
+      {
+        "case": "COMBINED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true,
+          "single_evaluation": true
+        },
+        "evaluations": 1,
+        "passed": true
+      },
+      {
+        "case": "MIXED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true
+      }
+    ],
+    "final_balanced": [
+      {
+        "case": "PBR",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 32,
+            "total_ms": 9.614,
+            "steady_mean_ms": 0.286,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.0055803461000323296,
+            "alpha_mae": 0.0,
+            "white_composite_mae": 0.0055803461000323296
+          }
+        ]
+      },
+      {
+        "case": "SHADER_RGB",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 32,
+            "total_ms": 9.247,
+            "steady_mean_ms": 0.275,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.00844242051243782,
+            "alpha_mae": 0.0,
+            "white_composite_mae": 0.00844242051243782
+          }
+        ]
+      },
+      {
+        "case": "EMISSION",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 32,
+            "total_ms": 9.424,
+            "steady_mean_ms": 0.28,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.015304806642234325,
+            "alpha_mae": 0.0,
+            "white_composite_mae": 0.015304806642234325
+          }
+        ]
+      },
+      {
+        "case": "NORMAL",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 32,
+            "total_ms": 9.236,
+            "steady_mean_ms": 0.274,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.005580032244324684,
+            "alpha_mae": 0.0,
+            "white_composite_mae": 0.005580032244324684
+          }
+        ]
+      },
+      {
+        "case": "SSS",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 32,
+            "total_ms": 9.362,
+            "steady_mean_ms": 0.279,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.009606104344129562,
+            "alpha_mae": 0.0,
+            "white_composite_mae": 0.009606104344129562
+          }
+        ]
+      },
+      {
+        "case": "TRANSLUCENT",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 32,
+            "total_ms": 9.572,
+            "steady_mean_ms": 0.285,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.0025118004996329546,
+            "alpha_mae": 0.0,
+            "white_composite_mae": 0.0025118004996329546
+          }
+        ]
+      },
+      {
+        "case": "DITHERED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 32,
+            "total_ms": 9.203,
+            "steady_mean_ms": 0.273,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.008445706218481064,
+            "alpha_mae": 0.0,
+            "white_composite_mae": 0.008445706218481064
+          }
+        ]
+      },
+      {
+        "case": "BLENDED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 32,
+            "total_ms": 9.838,
+            "steady_mean_ms": 0.294,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.0036734938621520996,
+            "alpha_mae": 0.0,
+            "white_composite_mae": 0.0036734938621520996
+          }
+        ]
+      },
+      {
+        "case": "COLORED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 32,
+            "total_ms": 9.27,
+            "steady_mean_ms": 0.275,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.002847430994734168,
+            "alpha_mae": 0.0,
+            "white_composite_mae": 0.002847430994734168
+          }
+        ]
+      },
+      {
+        "case": "GLASS",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 32,
+            "total_ms": 9.582,
+            "steady_mean_ms": 0.285,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.0026995353400707245,
+            "alpha_mae": 0.0,
+            "white_composite_mae": 0.0026995353400707245
+          }
+        ]
+      },
+      {
+        "case": "HOLDOUT",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 32,
+            "total_ms": 9.909,
+            "steady_mean_ms": 0.296,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.002567979507148266,
+            "alpha_mae": 0.008244620636105537,
+            "white_composite_mae": 0.00688512809574604
+          }
+        ]
+      },
+      {
+        "case": "VOLUME",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 32,
+            "total_ms": 9.169,
+            "steady_mean_ms": 0.272,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.008912093006074429,
+            "alpha_mae": 0.0,
+            "white_composite_mae": 0.008912093006074429
+          }
+        ]
+      },
+      {
+        "case": "SURFACE_VOLUME",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 32,
+            "total_ms": 9.397,
+            "steady_mean_ms": 0.28,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.009668399579823017,
+            "alpha_mae": 0.0,
+            "white_composite_mae": 0.009668399579823017
+          }
+        ]
+      },
+      {
+        "case": "ALPHA",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 32,
+            "total_ms": 9.161,
+            "steady_mean_ms": 0.272,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.009513760916888714,
+            "alpha_mae": 0.008202924393117428,
+            "white_composite_mae": 0.013715275563299656
+          }
+        ]
+      },
+      {
+        "case": "DOF",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 32,
+            "total_ms": 9.224,
+            "steady_mean_ms": 0.274,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.009607067331671715,
+            "alpha_mae": 0.0,
+            "white_composite_mae": 0.009607067331671715
+          }
+        ]
+      },
+      {
+        "case": "MOTION_BLUR",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true,
+          "single_evaluation": true
+        },
+        "evaluations": 1,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 1,
+            "total_ms": 0.754,
+            "steady_mean_ms": 0.0,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.011135732755064964,
+            "alpha_mae": 0.0,
+            "white_composite_mae": 0.011135732755064964
+          }
+        ]
+      },
+      {
+        "case": "COMBINED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true,
+          "single_evaluation": true
+        },
+        "evaluations": 1,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 1,
+            "total_ms": 0.741,
+            "steady_mean_ms": 0.0,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.009827069006860256,
+            "alpha_mae": 0.007110793609172106,
+            "white_composite_mae": 0.012646399438381195
+          }
+        ]
+      },
+      {
+        "case": "MIXED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 32,
+            "total_ms": 9.26,
+            "steady_mean_ms": 0.275,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.007596308831125498,
+            "alpha_mae": 0.0,
+            "white_composite_mae": 0.007596308831125498
+          }
+        ]
+      }
+    ],
+    "final_performance_ortho": [
+      {
+        "case": "PBR",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null
+      },
+      {
+        "case": "SHADER_RGB",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null
+      },
+      {
+        "case": "EMISSION",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null
+      },
+      {
+        "case": "NORMAL",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null
+      },
+      {
+        "case": "SSS",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null
+      },
+      {
+        "case": "TRANSLUCENT",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null
+      },
+      {
+        "case": "DITHERED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null
+      },
+      {
+        "case": "BLENDED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null
+      },
+      {
+        "case": "COLORED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null
+      },
+      {
+        "case": "GLASS",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null
+      },
+      {
+        "case": "HOLDOUT",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null
+      },
+      {
+        "case": "VOLUME",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null
+      },
+      {
+        "case": "SURFACE_VOLUME",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null
+      },
+      {
+        "case": "ALPHA",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null
+      },
+      {
+        "case": "DOF",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null
+      },
+      {
+        "case": "MOTION_BLUR",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true,
+          "single_evaluation": true
+        },
+        "evaluations": 1,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null
+      },
+      {
+        "case": "COMBINED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true,
+          "single_evaluation": true
+        },
+        "evaluations": 1,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null
+      },
+      {
+        "case": "MIXED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null
+      }
+    ],
+    "viewport300": [
+      {
+        "case": "MIXED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 639,
+        "passed": true
+      }
+    ],
+    "mixed_quality": [
+      {
+        "case": "MIXED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 32,
+            "total_ms": 9.743,
+            "steady_mean_ms": 0.29,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "sampled_device_peak_mib": 4547,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.007048696279525757,
+            "alpha_mae": 0.0,
+            "white_composite_mae": 0.007048696279525757
+          }
+        ]
+      }
+    ],
+    "alpha_edges_sr": [
+      {
+        "case": "ALPHA",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 32,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null,
+        "sampled_device_peak_mib": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.008424998261034489,
+            "alpha_mae": 0.0066195083782076836,
+            "white_composite_mae": 0.01198658812791109
+          }
+        ]
+      }
+    ],
+    "combined_inputs": [
+      {
+        "case": "COMBINED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true,
+          "single_evaluation": true
+        },
+        "evaluations": 1,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null,
+        "sampled_device_peak_mib": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.008626663126051426,
+            "alpha_mae": 0.005693073850125074,
+            "white_composite_mae": 0.010982831008732319
+          }
+        ]
+      }
+    ],
+    "final_smoke": [
+      {
+        "case": "COMBINED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true,
+          "single_evaluation": true
+        },
+        "evaluations": 3,
+        "passed": true,
+        "ngx_profiles": [
+          {
+            "evaluations": 1,
+            "total_ms": 0.734,
+            "steady_mean_ms": 0.0,
+            "sdk_vram_bytes": 30143204
+          },
+          {
+            "evaluations": 1,
+            "total_ms": 0.938,
+            "steady_mean_ms": 0.0,
+            "sdk_vram_bytes": 30143204
+          },
+          {
+            "evaluations": 1,
+            "total_ms": 2.089,
+            "steady_mean_ms": 0.0,
+            "sdk_vram_bytes": 30143204
+          }
+        ],
+        "total_gpu_ms": null,
+        "sampled_device_peak_mib": 4459
+      }
+    ],
+    "retry_fault_final": [
+      {
+        "case": "COMBINED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_output_transparency": true,
+          "native_retry": true,
+          "failed_output_discarded": true,
+          "no_successful_ngx": true,
+          "native_retry_alpha_matches": true,
+          "native_retry_rgb_mae": true
+        },
+        "evaluations": 0,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null,
+        "sampled_device_peak_mib": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.00015910754154901952,
+            "alpha_mae": 0.0,
+            "white_composite_mae": 0.00015910754154901952
+          }
+        ]
+      }
+    ],
+    "lens_jitter": [
+      {
+        "case": "DOF",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true
+        },
+        "evaluations": 38,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null,
+        "sampled_device_peak_mib": null
+      }
+    ],
+    "shutter_lens": [
+      {
+        "case": "COMBINED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_native_fallback": true,
+          "no_output_transparency": true,
+          "ngx_executed": true,
+          "lower_resolution": true,
+          "single_evaluation": true
+        },
+        "evaluations": 3,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null,
+        "sampled_device_peak_mib": null
+      }
+    ],
+    "retry_release": [
+      {
+        "case": "COMBINED",
+        "mode": "SR",
+        "checks": {
+          "exit_ok": true,
+          "output": true,
+          "no_failure": true,
+          "no_validation_error": true,
+          "no_output_transparency": true,
+          "native_retry": true,
+          "failed_output_discarded": true,
+          "no_successful_ngx": true,
+          "native_retry_alpha_matches": true,
+          "native_retry_rgb_mae": true
+        },
+        "evaluations": 0,
+        "passed": true,
+        "ngx_profiles": [],
+        "total_gpu_ms": null,
+        "sampled_device_peak_mib": null,
+        "reference_comparison": [
+          {
+            "frame": "0080",
+            "rgb_mae": 0.00015910847287159413,
+            "alpha_mae": 0.0,
+            "white_composite_mae": 0.00015910847287159413
+          }
+        ]
+      }
+    ]
+  },
+  "gpu_tests": {
+    "passed": 15,
+    "skipped": 0
+  },
+  "guide_thresholds": [
+    {
+      "alpha": 0.0,
+      "center_depth": 0.0590590238571167,
+      "expected_depth": 0.05905905905905906
+    },
+    {
+      "alpha": 0.4,
+      "center_depth": 0.0590590238571167,
+      "expected_depth": 0.05905905905905906
+    },
+    {
+      "alpha": 0.5,
+      "center_depth": 0.039039015769958496,
+      "expected_depth": 0.039039039039039033
+    },
+    {
+      "alpha": 0.6,
+      "center_depth": 0.039039015769958496,
+      "expected_depth": 0.039039039039039033
+    },
+    {
+      "alpha": 1.0,
+      "center_depth": 0.039039015769958496,
+      "expected_depth": 0.039039039039039033
+    }
+  ],
+  "cancellation": {
+    "cancelled": true,
+    "completed": true,
+    "recovered": true
+  },
+  "lifecycle": {
+    "backend": "VULKAN",
+    "hardware_raytracing": false,
+    "rr": false,
+    "captures": {
+      "00_native": {
+        "size": [
+          783,
+          598
+        ],
+        "mean": 0.547454961936312,
+        "std": 0.26765562836135565,
+        "mode": "OFF"
+      },
+      "01_quality": {
+        "size": [
+          783,
+          598
+        ],
+        "mean": 0.5475412603417585,
+        "std": 0.2674864987661424,
+        "mode": "QUALITY"
+      },
+      "02_navigation": {
+        "size": [
+          783,
+          598
+        ],
+        "mean": 0.547305740697755,
+        "std": 0.2680399677342598,
+        "mode": "QUALITY"
+      },
+      "03_settled": {
+        "size": [
+          783,
+          598
+        ],
+        "mean": 0.5458109176702114,
+        "std": 0.26638810952548136,
+        "mode": "QUALITY"
+      },
+      "04_cut": {
+        "size": [
+          783,
+          598
+        ],
+        "mean": 0.5205773860108389,
+        "std": 0.2501304932364702,
+        "mode": "QUALITY"
+      },
+      "05_balanced": {
+        "size": [
+          783,
+          598
+        ],
+        "mean": 0.5209492156359652,
+        "std": 0.2500625437149248,
+        "mode": "BALANCED"
+      },
+      "06_performance": {
+        "size": [
+          783,
+          598
+        ],
+        "mean": 0.5214013330486243,
+        "std": 0.25002554324856313,
+        "mode": "PERFORMANCE"
+      },
+      "07_motion": {
+        "size": [
+          783,
+          598
+        ],
+        "mean": 0.5246407896725862,
+        "std": 0.2515226421696593,
+        "mode": "PERFORMANCE"
+      },
+      "08_overlays": {
+        "size": [
+          783,
+          598
+        ],
+        "mean": 0.5301958323832382,
+        "std": 0.2451172195319543,
+        "mode": "PERFORMANCE"
+      },
+      "09_native_fallback": {
+        "size": [
+          783,
+          598
+        ],
+        "mean": 0.5223034369194699,
+        "std": 0.25503759955855965,
+        "mode": "PERFORMANCE"
+      },
+      "10_reenabled": {
+        "size": [
+          783,
+          598
+        ],
+        "mean": 0.5306843318751392,
+        "std": 0.24560721470051594,
+        "mode": "QUALITY"
+      },
+      "11_split_viewports": {
+        "size": [
+          388,
+          598
+        ],
+        "mean": 0.5336117065256236,
+        "std": 0.24819957683578225,
+        "mode": "QUALITY"
+      },
+      "12_disabled": {
+        "size": [
+          388,
+          598
+        ],
+        "mean": 0.5296651235054359,
+        "std": 0.246743890857793,
+        "mode": "OFF"
+      }
+    },
+    "passed": true
+  },
+  "pass_compatibility": [
+    {
+      "case": "SR_LEGACY_PASSES",
+      "evaluations": 96,
+      "expected_blocker": null,
+      "frames": 3,
+      "status": "PASS"
+    },
+    {
+      "case": "SR_LEGACY_WITH_DEPTH",
+      "evaluations": 0,
+      "expected_blocker": "Depth",
+      "frames": 3,
+      "status": "PASS"
+    },
+    {
+      "case": "SR_LEGACY_WITH_TRANSPARENT",
+      "evaluations": 0,
+      "expected_blocker": "Transparent",
+      "frames": 3,
+      "status": "PASS"
+    },
+    {
+      "case": "RR_LEGACY_PASSES",
+      "evaluations": 96,
+      "expected_blocker": null,
+      "frames": 3,
+      "status": "PASS"
+    },
+    {
+      "case": "RR_LEGACY_WITH_DEPTH",
+      "evaluations": 0,
+      "expected_blocker": "Depth",
+      "frames": 3,
+      "status": "PASS"
+    },
+    {
+      "case": "RR_LEGACY_WITH_TRANSPARENT",
+      "evaluations": 0,
+      "expected_blocker": "Transparent",
+      "frames": 3,
+      "status": "PASS"
+    }
+  ],
+  "rr_repeat": {
+    "mode": "RR",
+    "fallback": "NONE",
+    "records": [
+      {
+        "name": "00_frame0001",
+        "frame": 1,
+        "seconds": 1.9049897999502718,
+        "size": [
+          320,
+          240
+        ],
+        "mean": 0.546434760093689
+      },
+      {
+        "name": "01_frame0002",
+        "frame": 2,
+        "seconds": 1.1856048998888582,
+        "size": [
+          320,
+          240
+        ],
+        "mean": 0.5487825274467468
+      },
+      {
+        "name": "02_frame0001",
+        "frame": 1,
+        "seconds": 1.3043359997682273,
+        "size": [
+          320,
+          240
+        ],
+        "mean": 0.546434760093689,
+        "repeat_max_error": 0.0
+      }
+    ]
+  },
+  "total_gpu_ms": null,
+  "total_gpu_limitation": "RenderDoc injection made NGX initialization fail with 0xbad00002; fallback timing excluded.",
+  "quality_limitations": [
+    "Thin features are softer and low-sample shadows noisier than native 256-sample references.",
+    "300-frame mixed-material sequence does not certify every material/quality/effect permutation.",
+    "No additional GPU/driver coverage or true animated simulation-cache coverage.",
+    "Device peak VRAM includes other applications."
+  ],
+  "final_build_log": "E:/gitrepo/dlss_universal_release_build.log"
+}

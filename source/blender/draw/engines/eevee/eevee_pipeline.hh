@@ -201,6 +201,7 @@ class ForwardPipeline {
   Instance &inst_;
 
   Prepass prepass_{inst_};
+  Prepass reconstruction_prepass_{inst_};
 
   PassMain opaque_ps_ = {"Shading"};
   PassMain::Sub *opaque_subpasses_[2 /*Raycast*/][2 /*Double-Sided*/] = {{nullptr}};
@@ -240,6 +241,11 @@ class ForwardPipeline {
 
  public:
   ForwardPipeline(Instance &inst) : inst_(inst) {}
+  PassMain::Sub *reconstruction_add(blender::Material *material, GPUMaterial *gpu, bool motion)
+  {
+    return reconstruction_prepass_.add(material, gpu, motion, true);
+  }
+  void reconstruction_depth(View &view);
   bool has_opaque() const
   {
     return has_opaque_;

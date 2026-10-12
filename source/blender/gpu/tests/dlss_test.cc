@@ -48,9 +48,9 @@ struct RRFixture {
     return texture;
   }
 
-  bool init()
+  bool init(DLSSMode mode = DLSSMode::RayReconstruction)
   {
-    dlss = DLSS::create(error, DLSSMode::RayReconstruction);
+    dlss = DLSS::create(error, mode);
     if (!dlss || !dlss->configure(output_size, DLSSQuality::Quality, input_size)) {
       if (dlss) {
         error = dlss->error();
@@ -121,6 +121,42 @@ static void test_dlss_rr_optional_inputs_lifetime()
   }
 }
 GPU_VULKAN_TEST(dlss_rr_optional_inputs_lifetime)
+
+static void test_dlss_sr_bias_lifetime()
+{
+  RRFixture fixture;
+  if (!fixture.init(DLSSMode::SuperResolution)) {
+    GTEST_SKIP() << fixture.error;
+  }
+  for (int i = 0; i < 3; i++) {
+    const float4 value(i == 1 ? 1.0f : 0.0f);
+    GPU_texture_clear(fixture.frame.bias_current_color_mask, GPU_DATA_FLOAT, value);
+    ASSERT_TRUE(fixture.dlss->evaluate(fixture.frame));
+    fixture.frame.reset = false;
+  }
+  GPU_finish();
+  ASSERT_FALSE(fixture.dlss->failed()) << fixture.dlss->error();
+  /* Null optional inputs must clear the previous descriptor, including deferred recording. */
+  fixture.frame.bias_current_color_mask = nullptr;
+  ASSERT_TRUE(fixture.dlss->evaluate(fixture.frame));
+  fixture.dlss.reset();
+  for (const float4 &pixel : fixture.read()) {
+    EXPECT_TRUE(std::isfinite(pixel.x) && std::isfinite(pixel.y) && std::isfinite(pixel.z));
+  }
+}
+GPU_VULKAN_TEST(dlss_sr_bias_lifetime)
+
+static void test_dlss_sr_bias_validation()
+{
+  RRFixture fixture;
+  if (!fixture.init(DLSSMode::SuperResolution)) {
+    GTEST_SKIP() << fixture.error;
+  }
+  fixture.frame.bias_current_color_mask = fixture.frame.output;
+  EXPECT_FALSE(fixture.dlss->evaluate(fixture.frame));
+  EXPECT_TRUE(fixture.dlss->failed());
+}
+GPU_VULKAN_TEST(dlss_sr_bias_validation)
 
 static void test_dlss_rr_optional_inputs_validation()
 {

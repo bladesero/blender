@@ -117,6 +117,7 @@ class MotionBlurModule {
 
   /* Runs after rendering a sample. */
   void step();
+  void restore_time();
 
   void sync();
 

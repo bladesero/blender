@@ -15,6 +15,8 @@ struct GPUMaterial;
 }  // namespace blender
 
 namespace blender::eevee {
+
+enum class ReconstructionState { Off, Preparing, Active, Unavailable, Failed };
 class Instance;
 
 /** Window-dependent history and presentation, never used for final rendering. */
@@ -29,7 +31,7 @@ class DLSSViewportAdapter {
 
  public:
   ~DLSSViewportAdapter();
-  bool update_history(const Instance &inst);
+  bool update_history(const Instance &inst, std::string &reason);
   bool display(Instance &inst,
                gpu::Texture *color,
                gpu::Texture *depth,
@@ -59,11 +61,27 @@ class DLSSModule {
   std::unique_ptr<gpu::DLSS> context_;
   std::string error_;
   std::string last_report_;
+  std::string reset_reason_ = "activation";
   Vector<std::string> reasons_, settings_reasons_;
   bool attempted_ = false;
   bool enabled_ = false;
   bool reset_ = true;
   bool has_result_ = false;
+  ReconstructionState state_ = ReconstructionState::Off;
+  bool compiling_ = false;
+  uint64_t sample_ = 0;
+  bool history_valid_ = false;
+  float2 previous_jitter_ = float2(0);
+  draw::Texture guide_depth_{"DLSS.ReferenceDepth"}, guide_motion_{"DLSS.ReferenceMotion"};
+  draw::Framebuffer guide_fb_{"DLSS.Reference"};
+  draw::Texture bias_{"DLSS.CurrentColorBias"};
+  draw::Texture history_color_{"DLSS.PreviousColor"}, history_depth_{"DLSS.PreviousDepth"};
+  draw::Texture coverage_{"DLSS.Coverage"};
+  draw::Texture effect_base_{"DLSS.BeforeVolume"}, effect_risk_{"DLSS.EffectRisk"};
+  gpu::Shader *risk_shader_ = nullptr;
+  draw::PassSimple risk_pass_{"DLSS.RefractionRisk"};
+  gpu::Shader *alpha_shader_ = nullptr;
+  draw::PassSimple alpha_pass_{"DLSS.Alpha"};
   int mode_ = 0;
   bool rr_ = false, requested_rr_ = false;
   bool hardware_rr_requested_ = false;
@@ -139,6 +157,17 @@ class DLSSModule {
   bool ray_reconstruction() const
   {
     return enabled_ && rr_;
+  }
+  bool super_resolution() const
+  {
+    return enabled_ && !rr_;
+  }
+  bool single_evaluation() const;
+  void render_reference(draw::View &view);
+  void capture_effect_base(gpu::Texture *color);
+  ReconstructionState state() const
+  {
+    return state_;
   }
   void begin_trace();
   void capture_before_transparency(

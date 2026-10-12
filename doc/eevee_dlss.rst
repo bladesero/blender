@@ -1,6 +1,132 @@
 EEVEE Vulkan DLSS Reconstruction
 ===============================
 
+Material-independent SR (2026-10-12)
+------------------------------------
+
+SR eligibility is independent of material nodes. The complete native low-resolution
+image, including deferred refraction, forward transparency, Shader to RGB, SSS,
+volume integration, Holdout, motion blur and DOF, is the SR input. Hardware ray
+tracing and RR material evaluation are not prerequisites. The historical validation
+sections later in this document describe older, narrower implementations.
+
+The reference-depth prepass runs at input resolution with pixel jitter but without
+lens jitter. It uses the original depth-material graph and geometry deformation.
+Transparency uses a deterministic per-fragment opacity threshold of 0.5; rejected
+fragments leave the background guide intact. A second depth-tested replay after
+clearing velocity prevents a static foreground from inheriting background motion.
+These private guides never replace depth used by native shading. Refraction uses
+surface motion; volumes use the underlying surface or sky. A single depth/motion
+pair cannot describe every path through layered or refractive media.
+
+The SR current-color bias is a heuristic, not a correctness guarantee. It combines
+refraction closure coverage, color changes caused by volume/forward/post-effect
+composition, partial output coverage, reprojected depth changes and relative RGB
+changes. History sampling compensates projection jitter. Animated nodes do not
+need a separate material compiler. The SDK's reserved transparency mask is not used.
+
+SR color/coverage integration is material-independent. Viewport edits, time changes
+and camera movement restart the running mean; ordinary SR motion history remains
+available. Final shutter substeps do not restart the mean. Pixel jitter is removed
+for accumulation; lens and shutter effects remain in the image. Motion-blurred final
+frames use their native sample budget and one reset SR evaluation after integration,
+explicitly reported as ``single-evaluation``. They do not reuse animation-frame
+history. Cancellation and native retry restore the original scene time.
+
+Coverage is converted from native Combined transmittance and reconstructed separately
+with locally bounded bicubic interpolation. Output remains scene-linear premultiplied
+RGBA, including Holdout; neither experimental NGX alpha scaling nor division by small
+alpha is used. Current coverage is used while navigating/animating. This preserves
+alpha semantics but does not promise full-resolution edge detail or perfectly matched
+RGB/alpha filtering in all scenes. RR continues to output opaque alpha.
+
+States distinguish Off, Preparing, Active, Unavailable and Failed. Shader compilation
+keeps the saved request active and resets history on completion. Material features
+never select native SR fallback. Unsupported workflows and device/runtime/resource
+failures still do; failed final reconstruction is discarded before native retry.
+With ``--debug-gpu``, input dimensions, samples, evaluation counts and reset reasons
+are logged separately from successful NGX execution.
+
+Reproducible acceptance runner::
+
+  python tests/python/eevee_dlss_sr_materials.py --blender PATH/TO/blender.exe --output captures/sr
+  python tests/python/eevee_dlss_sr_materials.py --blender PATH/TO/blender.exe --output captures/native --mode NATIVE --samples 256
+  python tests/python/eevee_dlss_sr_materials.py --blender PATH/TO/blender.exe --output captures/motion --case MIXED --viewport --frames 300
+  python tests/python/eevee_dlss_sr_materials.py --blender PATH/TO/blender.exe --output captures/f12 --case COMBINED --f12
+
+Use ``--quality BALANCED`` / ``PERFORMANCE``, ``--orthographic``, ``--dof-jitter``, and ``--sequence
+80,81,80`` for the corresponding regressions. The runner saves fixtures, linear EXRs,
+float arrays, PNGs and GPU logs. It requires actual successful SR at a smaller input
+size, rejects fallback and output-resolution transparency, checks finite output and
+alpha, and checks Vulkan synchronization diagnostics. ``--profile`` enables the
+existing NGX-only timestamp and SDK VRAM report. GPU tests
+``GPUVulkanTest.dlss_sr_bias_lifetime`` and ``dlss_sr_bias_validation`` cover optional
+SR input reuse, missing masks, resource lifetime and invalid dimensions.
+
+Use ``--reference captures/native`` to record linear RGB, alpha and white-background
+composite mean absolute errors. ``--dump-inputs --dump-sample 32`` saves the last
+32-sample progressive SR inputs; use ``--dump-sample 1`` for shutter integration.
+Transparent fixtures also save black/white composite PNGs. To test native retry,
+render a native reference at the same sample budget and pass ``--inject-failure
+--reference PATH`` to the SR runner. This requires a discarded failed reconstruction,
+a complete native retry, matching alpha (absolute tolerance 0.002) and RGB MAE below
+0.001. Native lighting caches can make the retry differ slightly from a cold render.
+
+The focused opacity-guide fixture is run inside Blender::
+
+  blender --background --factory-startup --gpu-backend vulkan --debug-gpu --python-exit-code 1 --python tests/python/eevee_dlss_sr_guides.py -- --output captures/guides
+
+Motion-blur cancellation uses the windowed job test::
+
+  blender --factory-startup --gpu-backend vulkan --debug-gpu --python tests/python/eevee_dlss_cancel.py -- --output captures/cancel --sr --motion-blur
+
+Validation snapshot (RTX 4070 SUPER, driver 610.88)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Release compilation and the following real-GPU checks passed on 2026-10-12:
+
+* 18 material/effect fixtures at Quality, Balanced and orthographic Performance
+  (54 renders). Every SR case executed successful NGX at a smaller input size,
+  without material fallback, output-resolution transparency or validation errors.
+* 300 captured dynamic mixed-material viewport frames, with 639 successful NGX
+  evaluations, plus a separate 13-capture toggle/navigation/quality/split-view test.
+* Five transparent-guide thresholds (0, 0.4, 0.5, 0.6, 1), including depth readback
+  and zero motion for final frames; asynchronous F12, 80/81/80 repeatability,
+  motion-blur cancellation/time restoration and injected NGX failure/native retry.
+* Explicit lens jitter: an 8-sample request used 38 progressive SR evaluations to
+  preserve complete lens patterns and the SR minimum. With shutter integration it
+  used the native 14-sample effective budget and exactly one SR evaluation per frame.
+* 15 Vulkan GPU/render-graph tests; SR/RR data-pass compatibility (six cases);
+  RR 1/2/1 frame repeatability (maximum repeat error 0).
+
+At 320x240, the updated mixed fixture with Quality SR and 32 samples had RGB MAE
+0.007049 against native 256 samples. Alpha-fixture errors were RGB MAE 0.008425,
+alpha MAE 0.006620 and white-composite MAE 0.011987. These are measurements, not
+universal acceptance thresholds. Visual comparison shows softer thin features and
+more low-sample shadow noise; transparent edges do not match native 256-sample output.
+The combined motion-blur failure retry had exact alpha and RGB MAE 0.000159 against
+native 32 samples after restoring native volume-grid dimensions.
+
+For the 32-evaluation mixed Quality run, NGX timestamps totaled 9.743 ms, with a
+0.290 ms steady evaluation mean. SDK-reported memory was 30,143,204 bytes; sampled
+whole-device peak was 4547 MiB (includes other applications). These are NGX-only
+timings, not total GPU render time or a speedup claim. Full GPU timing remains
+unmeasured: RenderDoc injection caused NGX initialization failure (0xbad00002), so
+its fallback captures were rejected as SR measurements. The runner explicitly stores
+``total_gpu_ms: null`` rather than substituting CPU time or native fallback timing.
+
+Machine-readable results are summarized in ``eevee_dlss_sr_validation.json``.
+Local evidence is under ``E:/gitrepo/dlss_universal_validation``: EXRs, float arrays,
+fixture blend files, input/output readbacks, 300 viewport PNGs and validation logs.
+This is a functional regression baseline, not exhaustive perceptual certification:
+the 300-frame sequence does not cover every material/quality/effect permutation,
+and additional GPUs/drivers and true animated simulation caches remain untested.
+
+Rendering successfully is distinct from perceptual acceptance. Compare captures with
+native high-sample output and composite transparent images over both black and white.
+Inspect long sequences for trails, disocclusion, flicker and lost detail; do not infer
+quality or a performance improvement from NGX success alone.
+
 Scope
 -----
 
@@ -36,7 +162,7 @@ in the blend file; support is checked locally at runtime.
 
 Native fallback is used for unsupported GPUs/backends/builds, missing runtime, NGX
 failure, non-Combined passes, render regions, XR, viewport compositing,
-transparent film, and camera depth of field. The viewport information text describes
+and independent Grease Pencil rendering. The viewport information text describes
 fallback. Viewport image renders retain their native path. An unsupported configuration
 does not silently change the saved user setting.
 
@@ -44,9 +170,12 @@ Final renders use the separate ``scene.eevee.dlss_render_quality`` setting. RR s
 are ``scene.eevee.dlss_rr`` (viewport) and ``scene.eevee.dlss_render_rr`` (final). All new
 settings default to off, and RR requires quality other than Off. Final output supports
 Combined only; data passes, AOVs, Cryptomatte, multiview and render borders fall back.
-Motion blur, DOF, volumes, transparent film, Holdout and Shader to RGB still
-select native rendering. Refraction remains unsupported by SR. SR supports SSS, thin Translucent, Dithered transparency and
-Normal Map shading. Blended surfaces use output-resolution composition after SR.
+SR evaluates all EEVEE materials at input resolution, including refraction, volumes,
+Holdout, Shader to RGB, SSS, Translucent, Dithered and Blended surfaces. Transparent
+film, DOF and motion blur no longer select native SR fallback. All surface/volume
+color is composited before SR; there is no output-resolution material shading.
+RR retains its existing restrictions on motion blur, DOF, volumes, transparent film,
+Holdout and Shader to RGB.
 RR uses mixed tracing: lightweight PBR and transparency use hardware queries;
 SSS, Translucent, glass and complex graphs retain native screen/probe shading without
 blocking RR. Unsupported geometry remains a frame-level restriction. Primary materials
@@ -79,7 +208,8 @@ final linear RGBA output. Final reconstruction does not require a window or ``rv
   input/output dependencies, records NGX, and invalidates cached Vulkan bindings.
   Its memory access masks cover SDK-internal transfer clears/copies as well as shaders.
 * DLSS replaces Film's color accumulation/reprojection for the active viewport.
-  Its high-resolution RGB result is displayed with alpha 1. Depth for overlays is
+  SR combines its high-resolution RGB with independently reconstructed coverage;
+  RR retains opaque alpha. Depth for overlays is
   sampled separately; it is not reconstructed by DLSS.
 * UI and overlays remain at output resolution. Display color management remains in
   Blender's existing viewport pipeline.
@@ -94,11 +224,14 @@ final linear RGBA output. Final reconstruction does not require a window or ``rv
 Final render behavior
 ---------------------
 
-Each output frame, view and View Layer creates independent history. The scene time stays
-fixed while SR/RR evaluates once per sample. Static-frame motion is zero; subpixel jitter
-is passed separately. Render samples are raised to at least 32, shown in render progress.
+Each output frame, view and View Layer creates independent history. Without motion blur,
+SR/RR evaluates once per sample. Static-frame motion is zero; subpixel jitter is passed
+separately. Render samples are raised to at least 32, shown in render progress; SR rounds
+to complete native lens sampling patterns. With motion blur, SR instead keeps the native
+sampling budget, integrates all shutter samples first, then evaluates once with reset.
+This single-evaluation mode has no SR history and can resolve less detail.
 The final reconstructed sample bypasses Film TAA. A compute adapter restores bottom-left
-orientation and opaque alpha before Film Combined texture lookup/readback, Render Result,
+orientation and premultiplied RGBA before Film Combined texture lookup/readback, Render Result,
 ordinary Combined compositing, PNG or linear EXR output. No history is borrowed from
 another animation frame, including when rendering frames in reverse order.
 
@@ -272,6 +405,9 @@ production visual acceptance from API success alone.
 
 Material compatibility extension
 --------------------------------
+
+Historical baseline: the SR transparency split and closure-specific integration below
+are superseded by the material-independent SR implementation described at the end.
 
 SR and RR use separate capability checks. Diagnostics list stable reason codes, actual
 mode, View Layer/pass names and material/object names when known. Shader compilation is

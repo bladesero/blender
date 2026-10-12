@@ -408,6 +408,7 @@ void ForwardPipeline::sync()
   has_holdout_ = false;
 
   prepass_.init({}, true, false);
+  reconstruction_prepass_.init({}, true, false);
 
   {
     opaque_ps_.init();
@@ -489,6 +490,14 @@ void ForwardPipeline::end_sync()
 {
   inst_.pipelines.data.use_monochromatic_transmittance = !use_colored_transparency();
   prepass_.end_sync();
+  reconstruction_prepass_.end_sync();
+}
+
+void ForwardPipeline::reconstruction_depth(View &view)
+{
+  inst_.uniform_data.pipeline.use_reconstruction_guide = true;
+  reconstruction_prepass_.render(view, nullptr, true);
+  inst_.uniform_data.pipeline.use_reconstruction_guide = false;
 }
 
 PassMain::Sub *ForwardPipeline::prepass_opaque_add(blender::Material *blender_mat,
@@ -717,7 +726,8 @@ void ForwardPipeline::render(View &view,
 
   if (has_transparent_) {
     /* Include forward opaque surfaces, already accumulated in the layer targets, in the guide.
-     * Capture before drawing transparency; resolve below still composites it exactly once. */
+
+     * * Capture before drawing transparency; resolve below still composites it exactly once. */
     inst_.film.reconstruction().capture_before_transparency(view,
                                                             transp_buffer_.r_channel_tx,
                                                             transp_buffer_.g_channel_tx,
@@ -1202,7 +1212,7 @@ gpu::Texture *DeferredLayer::render(View &render_view,
 
   GPU_framebuffer_bind(combined_fb);
   inst_.manager->submit(combine_ps_, render_view);
-  if (hardware_opaque_layer_) {
+  if (hardware_opaque_layer_ || inst_.film.reconstruction().super_resolution()) {
     inst_.film.reconstruction().prepare_guides(render_view);
   }
 

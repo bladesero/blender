@@ -941,15 +941,22 @@ void Film::display()
 
 void Film::restart_native()
 {
+  inst_.motion_blur.restore_time();
   const int2 extent = native_extent_;
   const rcti rect = native_rect_;
   inst_.sampling.init(inst_.scene);
   inst_.sampling.restart();
   inst_.raytracing.hardware.invalidate();
+  inst_.shadows.reset();
   init(extent, &rect);
   inst_.render_buffers.init();
+  inst_.ambient_occlusion.init();
   inst_.raytracing.init();
+  inst_.depth_of_field.init();
+  inst_.motion_blur.init();
   inst_.main_view.init();
+  /* Froxel dimensions and mappings were configured for the failed SR input size. */
+  inst_.volume.init();
 }
 
 void Film::cryptomatte_sort()

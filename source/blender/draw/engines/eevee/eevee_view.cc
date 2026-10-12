@@ -157,6 +157,7 @@ void ShadingView::render()
   inst_.pipelines.background.render(render_view_, combined_fb_);
 
   inst_.gbuffer.release();
+  inst_.film.reconstruction().capture_effect_base(rbufs.combined_tx);
 
   inst_.volume.draw_compute(main_view_, extent_);
 
@@ -182,6 +183,8 @@ void ShadingView::render()
   inst_.planar_probes.viewport_draw(render_view_, combined_fb_);
 
   gpu::Texture *combined_final_tx = render_postfx(rbufs.combined_tx);
+  /* Fixed aperture reference, independent of stochastic lens offsets and post effects. */
+  inst_.film.reconstruction().render_reference(jitter_view_);
   inst_.film.accumulate(jitter_view_, combined_final_tx);
 
   if (inst_.film.reconstruction().output_blended()) {

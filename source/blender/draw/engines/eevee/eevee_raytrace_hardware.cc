@@ -9,6 +9,7 @@
 #include "BKE_material.hh"
 #include "BKE_mesh.hh"
 #include "BKE_mesh_tangent.hh"
+#include "BKE_mesh_wrapper.hh"
 #include "BKE_object.hh"
 #include "BLI_math_matrix.hh"
 #include "BLI_math_vector.hh"
@@ -53,8 +54,18 @@ void RayTracingScene::begin_sync(bool invalidate_materials)
 
 void RayTracingScene::sync_mesh(const ObjectHandle &object, const MaterialArray &materials)
 {
-  const Mesh *mesh = BKE_object_get_evaluated_mesh(object.object);
+  Mesh *mesh = BKE_object_get_evaluated_mesh(object.object);
   if (!mesh) {
+    return;
+  }
+  /* Edit-mode evaluation can leave a BMesh wrapper without regular mesh arrays. Material
+   * attributes and BLAS extraction below need those arrays, including deformed positions. */
+  if (mesh->runtime->wrapper_type == ME_WRAPPER_TYPE_BMESH) {
+    BKE_mesh_wrapper_ensure_mdata(mesh);
+  }
+  if (mesh->faces_num == 0) {
+    /* There is no traceable surface or tangent data. Leave old instances untouched here so
+     * end_sync removes them, including when all faces are deleted in edit mode. */
     return;
   }
   GeometryKey key{mesh, {}, {}};

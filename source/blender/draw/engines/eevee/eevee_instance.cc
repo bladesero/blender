@@ -14,6 +14,7 @@
 #include "BKE_object.hh"
 #include "BKE_scene.hh"
 
+#include "BLI_memory_utils.hh"
 #include "BLI_rect.h"
 #include "BLI_time.h"
 
@@ -686,6 +687,8 @@ void Instance::render_read_result(RenderLayer *render_layer, const char *view_na
 
 void Instance::render_frame(RenderEngine *engine, RenderLayer *render_layer, const char *view_name)
 {
+  /* Also restore shutter time on an early return or exception during rendering. */
+  BLI_SCOPED_DEFER([&]() { motion_blur.restore_time(); });
   skip_render_ = skip_render_ || !is_loaded(needed_shaders);
 
   if (skip_render_) {

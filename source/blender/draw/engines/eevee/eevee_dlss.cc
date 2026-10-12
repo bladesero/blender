@@ -31,6 +31,8 @@ DLSSModule::~DLSSModule()
   GPU_SHADER_FREE_SAFE(integrate_shader_);
   GPU_SHADER_FREE_SAFE(sss_shader_);
   GPU_SHADER_FREE_SAFE(before_transparency_shader_);
+  GPU_SHADER_FREE_SAFE(alpha_shader_);
+  GPU_SHADER_FREE_SAFE(risk_shader_);
 }
 
 void DLSSModule::init(int2 extent, bool full_viewport)
@@ -38,6 +40,7 @@ void DLSSModule::init(int2 extent, bool full_viewport)
   const bool was_enabled = enabled_;
   unsupported_geometry_ = false;
   enabled_ = false;
+  state_ = force_native_ ? ReconstructionState::Failed : ReconstructionState::Unavailable;
   reasons_.clear();
   visible_size_ = extent;
   crop_ = int2(Film::overscan_pixels_get(inst_.camera.overscan(), extent));
@@ -55,25 +58,32 @@ void DLSSModule::init(int2 extent, bool full_viewport)
   if (request_hardware_rr != hardware_rr_requested_ || mode != mode_ ||
       request_rr != requested_rr_ || (viewport && force_native_ && update != blocked_update_))
   {
+    reset_reason_ = "mode/quality/retry";
     context_.reset();
     attempted_ = false;
     force_native_ = false;
     reset_ = true;
     has_result_ = false;
     frame_ = 0;
+    sample_ = 0;
+    history_valid_ = false;
   }
   mode_ = mode;
   requested_rr_ = request_rr;
   hardware_rr_requested_ = request_hardware_rr;
   if (!viewport) {
+    reset_reason_ = "output-frame";
     /* A new output frame never borrows history, including when reusing an Instance. */
     frame_ = 0;
     blend_samples_ = 0;
     integrated_samples_ = 0;
+    sample_ = 0;
+    history_valid_ = false;
     reset_ = true;
     has_result_ = false;
   }
   if (mode == 0) {
+    state_ = ReconstructionState::Off;
     context_.reset();
     attempted_ = false;
     force_native_ = false;
@@ -97,13 +107,16 @@ void DLSSModule::init(int2 extent, bool full_viewport)
     block(viewport && inst_.v3d->shading.render_pass != EEVEE_RENDER_PASS_COMBINED,
           "VIEW_PASS",
           "viewport must display Combined");
-    block(viewport && inst_.use_studio_light() && inst_.v3d->shading.studiolight_background < 1.0f,
+    block(request_rr && viewport && inst_.use_studio_light() &&
+              inst_.v3d->shading.studiolight_background < 1.0f,
           "STUDIO_ALPHA",
           "studio background must be opaque");
     if (!viewport) {
       const std::string layer = inst_.view_layer->name;
       /* Film resolves legacy flags and removes obsolete passes before initializing DLSS.
+       *
        * Saved Cycles-only passes are not EEVEE outputs and must not block reconstruction.
+       *
        * Do not use enabled_passes_get(): it also includes DLSS's internal motion vectors. */
       const auto data_passes = inst_.film.output_passes_get() &
                                ~(EEVEE_RENDER_PASS_COMBINED |
@@ -125,8 +138,8 @@ void DLSSModule::init(int2 extent, bool full_viewport)
 
       block(data_passes != 0,
             "DATA_PASSES",
-            "View Layer '" + layer + "': only Combined is supported; enabled data passes: " +
-                pass_names);
+            "View Layer '" + layer +
+                "': only Combined is supported; enabled data passes: " + pass_names);
       block(inst_.view_layer->cryptomatte_flag &
                 (VIEW_LAYER_CRYPTOMATTE_OBJECT | VIEW_LAYER_CRYPTOMATTE_ASSET |
                  VIEW_LAYER_CRYPTOMATTE_MATERIAL),
@@ -138,12 +151,13 @@ void DLSSModule::init(int2 extent, bool full_viewport)
       block(inst_.scene->r.scemode & R_MULTIVIEW, "MULTIVIEW", "multiview is enabled");
       block(inst_.scene->r.mode & R_BORDER, "BORDER", "render border is enabled");
     }
-    block(inst_.scene->r.alphamode == R_ALPHAPREMUL,
+    block(request_rr && inst_.scene->r.alphamode == R_ALPHAPREMUL,
           "FILM_ALPHA",
           "transparent film is unsupported");
-    block(inst_.scene->r.mode & R_MBLUR, "MOTION_BLUR", "motion blur is enabled");
-    block(
-        camera && (camera->dof.flag & CAM_DOF_ENABLED), "DOF", "camera depth of field is enabled");
+    block(request_rr && (inst_.scene->r.mode & R_MBLUR), "MOTION_BLUR", "motion blur is enabled");
+    block(request_rr && camera && (camera->dof.flag & CAM_DOF_ENABLED),
+          "DOF",
+          "camera depth of field is enabled");
     if (!reasons_.is_empty()) {
       /* Material diagnostics are collected during sync even when settings already block SR. */
     }
@@ -170,7 +184,9 @@ void DLSSModule::init(int2 extent, bool full_viewport)
                                                    gpu::DLSSQuality::Performance;
       if (context_ && context_->configure(extent, quality, input_size)) {
         enabled_ = true;
+        state_ = ReconstructionState::Preparing;
         if (input_size != input_size_ || extent != output_size_) {
+          reset_reason_ = "resolution";
           reset_ = true;
           has_result_ = false;
         }
@@ -188,7 +204,9 @@ void DLSSModule::init(int2 extent, bool full_viewport)
   settings_reasons_ = reasons_;
   if (!viewport && enabled_) {
     inst_.sampling.restart();
-    inst_.sampling.reconstruction_samples();
+    if (!single_evaluation()) {
+      inst_.sampling.reconstruction_samples(!rr_);
+    }
   }
   if (was_enabled != enabled_) {
     reset_ = true;
@@ -211,7 +229,7 @@ void DLSSModule::material_check(const Object *object,
                                 const blender::Material *material,
                                 GPUMaterial *gpu)
 {
-  if (mode_ == 0 || !gpu) {
+  if (mode_ == 0 || !gpu || !requested_rr_) {
     return;
   }
   const std::string owner = std::string(object->id.name + 2) + " / " +
@@ -221,9 +239,6 @@ void DLSSModule::material_check(const Object *object,
       reason(code, owner + ": " + message);
     }
   };
-  if (!requested_rr_) {
-    flag(GPU_MATFLAG_REFRACT, "MATERIAL_REFRACTION", "refraction is unsupported by SR");
-  }
   flag(GPU_MATFLAG_HOLDOUT, "MATERIAL_HOLDOUT", "holdout is unsupported");
   flag(GPU_MATFLAG_SHADER_TO_RGBA, "MATERIAL_SHADER_RGB", "Shader to RGB is unsupported");
 }
@@ -254,6 +269,7 @@ void DLSSModule::reject(const char *reason)
   blocked_update_ = DEG_get_update_count(inst_.depsgraph);
   restart_ = true;
   enabled_ = false;
+  state_ = ReconstructionState::Failed;
   has_result_ = false;
   context_.reset();
 }
@@ -265,23 +281,36 @@ void DLSSModule::end_sync()
     return;
   }
   if (inst_.materials.queued_shaders_count > 0 || inst_.materials.queued_textures_count > 0) {
+    compiling_ = true;
+    if (enabled_) {
+      state_ = ReconstructionState::Preparing;
+      report("DLSS: Preparing; waiting for material compilation");
+    }
     return;
   }
+  if (compiling_) {
+    reset_reason_ = "shader-ready";
+    reset_ = true;
+    integrated_samples_ = 0;
+    compiling_ = false;
+  }
   const auto closures = inst_.pipelines.deferred.closure_bits_get();
-  if (inst_.volume.will_enable()) {
+  if (requested_rr_ && inst_.volume.will_enable()) {
     reason("VOLUME", "volume rendering is unsupported");
   }
   if (inst_.gpencil_engine_enabled()) {
     reason("GREASE_PENCIL", "Grease Pencil is unsupported");
   }
-  if (!rr_ && (closures & CLOSURE_REFRACTION)) {
+  if (requested_rr_ && !rr_ && (closures & CLOSURE_REFRACTION)) {
     reason("REFRACTION", "refractive surface is unsupported");
   }
-  if (closures & CLOSURE_HOLDOUT || inst_.pipelines.forward.has_holdout()) {
+  if (requested_rr_ && (closures & CLOSURE_HOLDOUT || inst_.pipelines.forward.has_holdout())) {
     reason("HOLDOUT", "holdout surface is unsupported");
   }
 
-  if (!rr_ && inst_.pipelines.forward.has_transparent() && inst_.pipelines.has_raycast) {
+  if (requested_rr_ && !rr_ && inst_.pipelines.forward.has_transparent() &&
+      inst_.pipelines.has_raycast)
+  {
     reason("BLENDED_RAYCAST", "Blended materials with screen ray-cast nodes are unsupported");
   }
   if (rr_) {
@@ -306,14 +335,22 @@ void DLSSModule::end_sync()
     }
   }
   else if (enabled_) {
-    std::string message = std::string("DLSS: ") + (rr_ ? "RR active; mixed tracing" : "SR active");
+    state_ = has_result_ ? ReconstructionState::Active : ReconstructionState::Preparing;
+    std::string message = std::string("DLSS: ") + (rr_ ? "RR" : "SR") +
+                          (has_result_ ? " Active" : " Preparing");
+    if (rr_) {
+      message += "; mixed tracing";
+    }
     if (rr_) {
       for (const std::string &detail : inst_.raytracing.hardware.scene.materials.diagnostics) {
         message += "\n  [LOCAL_SCREEN_PROBE] " + detail;
       }
     }
-    else if (output_blended()) {
-      message += "; Blended at output resolution";
+    else {
+      message += "; all materials at input resolution";
+      if (single_evaluation()) {
+        message += "; single-evaluation after shutter integration";
+      }
     }
     report(message);
   }
@@ -331,29 +368,42 @@ float2 DLSSModule::jitter() const
     }
     return value;
   };
-  const uint64_t index = (frame_ % 32) + 1;
+  const uint64_t index = (sample_ % 32) + 1;
   return float2(radical_inverse(index, 2), radical_inverse(index, 3)) - 0.5f;
 }
 
-bool DLSSViewportAdapter::update_history(const Instance &inst)
+bool DLSSViewportAdapter::update_history(const Instance &inst, std::string &reason)
 {
   const CameraData &camera = inst.camera.data_get();
   const float time = inst.scene->r.cfra + inst.scene->r.subframe;
   const uint64_t update = DEG_get_update_count(inst.depsgraph);
   /* Preserve history for continuous camera navigation and consecutive animation frames.
    * Edits at a fixed timeline position have no reliable lighting/material motion model. */
-  const bool reset = (camera_ != inst.camera_orig_object || projection_ != camera.winmat ||
-                      (update != depsgraph_update_ && time == scene_time_) ||
-                      fabsf(time - scene_time_) > 1.0f || time < scene_time_ ||
-                      math::dot(float3(view_inverse_[2]), float3(camera.viewinv[2])) < 0.5f ||
-                      math::distance(float3(view_inverse_[3]), float3(camera.viewinv[3])) >
-                          max_ff(1.0f, inst.rv3d ? inst.rv3d->dist : 1.0f));
+  const char *reset_reason = nullptr;
+  if (camera_ != inst.camera_orig_object || projection_ != camera.winmat) {
+    reset_reason = "camera/projection";
+  }
+  else if (update != depsgraph_update_ && time == scene_time_) {
+    reset_reason = "scene-edit";
+  }
+  else if (fabsf(time - scene_time_) > 1.0f || time < scene_time_) {
+    reset_reason = "timeline-jump";
+  }
+  else if (math::dot(float3(view_inverse_[2]), float3(camera.viewinv[2])) < 0.5f ||
+           math::distance(float3(view_inverse_[3]), float3(camera.viewinv[3])) >
+               max_ff(1.0f, inst.rv3d ? inst.rv3d->dist : 1.0f))
+  {
+    reset_reason = "camera-cut";
+  }
+  if (reset_reason) {
+    reason = reset_reason;
+  }
   camera_ = inst.camera_orig_object;
   projection_ = camera.winmat;
   view_inverse_ = camera.viewinv;
   depsgraph_update_ = update;
   scene_time_ = time;
-  return reset;
+  return reset_reason != nullptr;
 }
 
 void DLSSModule::render(draw::View &view, gpu::Texture *input)
@@ -361,7 +411,7 @@ void DLSSModule::render(draw::View &view, gpu::Texture *input)
   const CameraData &camera = inst_.camera.data_get();
   has_composite_ = false;
   if (inst_.is_viewport()) {
-    reset_ |= viewport_adapter_.update_history(inst_);
+    reset_ |= viewport_adapter_.update_history(inst_, reset_reason_);
   }
   if (rr_ && hardware_revision_ != inst_.raytracing.hardware.history_revision()) {
     reset_ = true;
@@ -379,13 +429,16 @@ void DLSSModule::render(draw::View &view, gpu::Texture *input)
   depth_.ensure_2d(gpu::TextureFormat::SFLOAT_32, input_size_);
   motion_.ensure_2d(gpu::TextureFormat::SFLOAT_32_32, input_size_);
   output_.ensure_2d(gpu::TextureFormat::SFLOAT_16_16_16_16, output_size_);
+  if (!color_.is_valid() || !depth_.is_valid() || !motion_.is_valid() || !output_.is_valid()) {
+    reject("reconstruction texture allocation failed");
+    return;
+  }
 
   last_jitter_ = jitter();
   /* SR is an antialiasing reconstructor, not a stochastic transparency denoiser.
    * Preserve static-frame Monte Carlo convergence before reconstruction. The color is
    * accumulated on an unjittered grid, then sampled at the current jitter by prepare. */
-  bool integrated = !rr_ && (inst_.pipelines.deferred.closure_bits_get() &
-                             (CLOSURE_TRANSPARENCY | CLOSURE_SSS | CLOSURE_TRANSLUCENT));
+  bool integrated = !rr_;
   if (integrated) {
     if (!integrate_shader_) {
       integrate_shader_ = GPU_shader_create_from_info_name("eevee_dlss_integrate");
@@ -396,8 +449,8 @@ void DLSSModule::render(draw::View &view, gpu::Texture *input)
     }
     const uint64_t update = DEG_get_update_count(inst_.depsgraph);
     const float time = inst_.scene->r.cfra + inst_.scene->r.subframe;
-    if (reset_ || update != integrated_update_ || time != integrated_time_ ||
-        (inst_.is_viewport() && inst_.velocity.camera_has_motion()))
+    if (inst_.is_viewport() && (reset_ || update != integrated_update_ ||
+                                time != integrated_time_ || inst_.velocity.camera_has_motion()))
     {
       integrated_samples_ = 0;
     }
@@ -405,6 +458,10 @@ void DLSSModule::render(draw::View &view, gpu::Texture *input)
     integrated_time_ = time;
     if (integrated_color_.ensure_2d(gpu::TextureFormat::SFLOAT_32_32_32_32, input_size_)) {
       integrated_samples_ = 0;
+    }
+    if (!integrated_color_.is_valid()) {
+      reject("SR integration texture allocation failed");
+      return;
     }
     integrate_pass_.init();
     integrate_pass_.shader_set(integrate_shader_);
@@ -415,13 +472,41 @@ void DLSSModule::render(draw::View &view, gpu::Texture *input)
     integrate_pass_.dispatch(int3(math::divide_ceil(input_size_, int2(8)), 1));
     inst_.manager->submit(integrate_pass_, view);
   }
+  sample_++;
+  if (single_evaluation() && !inst_.sampling.finished()) {
+    return;
+  }
+  coverage_.ensure_2d(gpu::TextureFormat::SFLOAT_16, input_size_);
+  bias_.ensure_2d(gpu::TextureFormat::UNORM_8, input_size_);
+  bool resized = history_color_.ensure_2d(gpu::TextureFormat::SFLOAT_16_16_16_16, input_size_);
+  resized |= history_depth_.ensure_2d(gpu::TextureFormat::SFLOAT_32, input_size_);
+  if (!coverage_.is_valid() || !bias_.is_valid() || !history_color_.is_valid() ||
+      !history_depth_.is_valid())
+  {
+    reject("reconstruction history texture allocation failed");
+    return;
+  }
+  if (resized || reset_) {
+    history_color_.clear(float4(0));
+    history_depth_.clear(float4(1));
+    history_valid_ = false;
+  }
   prepare_.init();
   prepare_.shader_set(prepare_shader_);
   prepare_.bind_texture("input_color", integrated ? integrated_color_ : input);
   prepare_.push_constant("integrated", integrated);
   prepare_.push_constant("jitter", last_jitter_);
-  prepare_.bind_texture("input_depth", inst_.render_buffers.depth_tx);
-  prepare_.bind_texture("input_vector", inst_.render_buffers.vector_tx);
+  prepare_.bind_texture("input_depth", rr_ ? inst_.render_buffers.depth_tx : guide_depth_);
+  prepare_.bind_texture("input_vector", rr_ ? inst_.render_buffers.vector_tx : guide_motion_);
+  prepare_.bind_texture("previous_color", history_color_);
+  prepare_.bind_texture("previous_depth", history_depth_);
+  prepare_.bind_texture("effect_base", rr_ ? history_color_ : effect_base_);
+  prepare_.bind_texture("effect_risk", rr_ ? history_depth_ : effect_risk_);
+  prepare_.bind_texture("current_color", input);
+  prepare_.push_constant("use_effect_risk", !rr_);
+  prepare_.push_constant("history_valid", history_valid_ && !rr_);
+  prepare_.push_constant("history_jitter_delta",
+                         previous_jitter_ - float2(last_jitter_.x, -last_jitter_.y));
   prepare_.bind_ubo("camera_prev", &(*inst_.velocity.camera_steps[STEP_PREVIOUS]));
   prepare_.bind_ubo("camera_curr", &(*inst_.velocity.camera_steps[STEP_CURRENT]));
   prepare_.bind_ubo("camera_next", &(*inst_.velocity.camera_steps[STEP_PREVIOUS]));
@@ -429,6 +514,8 @@ void DLSSModule::render(draw::View &view, gpu::Texture *input)
   prepare_.bind_image("sr_color", color_);
   prepare_.bind_image("sr_depth", depth_);
   prepare_.bind_image("sr_motion", motion_);
+  prepare_.bind_image("sr_coverage", coverage_);
+  prepare_.bind_image("sr_bias", bias_);
   prepare_.dispatch(int3(math::divide_ceil(input_size_, int2(8)), 1));
   inst_.manager->submit(prepare_, view);
 
@@ -441,6 +528,9 @@ void DLSSModule::render(draw::View &view, gpu::Texture *input)
   frame.output = output_;
   frame.jitter = float2(last_jitter_.x, -last_jitter_.y);
   frame.reset = reset_;
+  if (!rr_) {
+    frame.bias_current_color_mask = bias_;
+  }
   if (rr_ && inst_.is_viewport() &&
       (inst_.pipelines.forward.has_transparent() ||
        (inst_.pipelines.deferred.closure_bits_get() &
@@ -474,16 +564,104 @@ void DLSSModule::render(draw::View &view, gpu::Texture *input)
     has_result_ = true;
     reset_ = false;
     frame_++;
+    state_ = compiling_ ? ReconstructionState::Preparing : ReconstructionState::Active;
+    GPU_texture_copy(history_color_, color_);
+    GPU_texture_copy(history_depth_, depth_);
+    history_valid_ = true;
+    previous_jitter_ = frame.jitter;
+    if (!rr_) {
+      if (!alpha_shader_) {
+        alpha_shader_ = GPU_shader_create_from_info_name("eevee_dlss_alpha");
+      }
+      if (!alpha_shader_) {
+        reject("alpha reconstruction shader compilation failed");
+        return;
+      }
+      composite_.ensure_2d(gpu::TextureFormat::SFLOAT_16_16_16_16, output_size_);
+      if (!composite_.is_valid()) {
+        reject("SR alpha output allocation failed");
+        return;
+      }
+      alpha_pass_.init();
+      alpha_pass_.shader_set(alpha_shader_);
+      alpha_pass_.bind_texture("sr_output", output_);
+      alpha_pass_.bind_texture("coverage", coverage_);
+      alpha_pass_.bind_image("composited", composite_);
+      alpha_pass_.push_constant("jitter", float2(last_jitter_.x, -last_jitter_.y));
+      alpha_pass_.dispatch(int3(math::divide_ceil(output_size_, int2(8)), 1));
+      inst_.manager->submit(alpha_pass_, view);
+      has_composite_ = true;
+    }
+    if (G.debug & G_DEBUG_GPU) {
+      fprintf(stderr,
+              "DLSS input: mode=%s input=%dx%d output=%dx%d samples=%llu evaluations=%llu "
+              "reset=%d reason=%s%s\n",
+              rr_ ? "RR" : "SR",
+              input_size_.x,
+              input_size_.y,
+              output_size_.x,
+              output_size_.y,
+              (unsigned long long)sample_,
+              (unsigned long long)frame_,
+              int(frame.reset),
+              frame.reset ? reset_reason_.c_str() : "retained",
+              single_evaluation() ? " single-evaluation" : "");
+    }
   }
   const char *dump_sample = std::getenv("BLENDER_DLSS_DUMP_SAMPLE");
-  if (frame_ == (dump_sample ? std::max<uint64_t>(1, std::strtoull(dump_sample, nullptr, 10)) : 1)) {
+  if (frame_ == (dump_sample ? std::max<uint64_t>(1, std::strtoull(dump_sample, nullptr, 10)) : 1))
+  {
     dump_guides();
+  }
+}
+
+void DLSSModule::capture_effect_base(gpu::Texture *color)
+{
+  if (super_resolution()) {
+    effect_base_.ensure_2d(GPU_texture_format(color), input_size_);
+    if (!effect_base_.is_valid()) {
+      reject("SR effect texture allocation failed");
+      return;
+    }
+    GPU_texture_copy(effect_base_, color);
   }
 }
 
 bool DLSSModule::output_blended() const
 {
-  return enabled_ && !rr_ && inst_.pipelines.forward.has_transparent();
+  return false;
+}
+
+bool DLSSModule::single_evaluation() const
+{
+  return !inst_.is_viewport() && !rr_ && (inst_.scene->r.mode & R_MBLUR) &&
+         (inst_.view_layer->layflag & SCE_LAY_MOTION_BLUR);
+}
+
+void DLSSModule::render_reference(draw::View &view)
+{
+  if (!super_resolution()) {
+    return;
+  }
+  guide_depth_.ensure_2d(RenderBuffers::depth_format, input_size_);
+  guide_motion_.ensure_2d(inst_.render_buffers.vector_tx_format(), input_size_);
+  if (!guide_depth_.is_valid() || !guide_motion_.is_valid()) {
+    reject("SR reference guide allocation failed");
+    return;
+  }
+  guide_motion_.clear(float4(VELOCITY_INVALID));
+  guide_fb_.ensure(GPU_ATTACHMENT_TEXTURE(guide_depth_),
+                   GPU_ATTACHMENT_NONE,
+                   GPU_ATTACHMENT_NONE,
+                   GPU_ATTACHMENT_TEXTURE(guide_motion_));
+  guide_fb_.bind();
+  guide_fb_.clear_depth(inst_.film.depth.clear_value);
+  inst_.pipelines.forward.reconstruction_depth(view);
+  /* Clear and replay against the nearest depth so a static foreground cannot inherit
+   * velocity written by a moving background in another material/culling bin. */
+  guide_motion_.clear(float4(VELOCITY_INVALID));
+  guide_fb_.bind();
+  inst_.pipelines.forward.reconstruction_depth(view);
 }
 
 void DLSSModule::finish()
@@ -540,6 +718,14 @@ void DLSSModule::blend_layer(
 
 void DLSSModule::begin_trace()
 {
+  if (super_resolution()) {
+    effect_risk_.ensure_2d(gpu::TextureFormat::UNORM_8, input_size_);
+    if (!effect_risk_.is_valid()) {
+      reject("SR refraction mask allocation failed");
+      return;
+    }
+    effect_risk_.clear(float4(0));
+  }
   has_sss_guide_ = false;
   has_before_transparency_ = false;
   if (!ray_reconstruction()) {
@@ -646,6 +832,21 @@ void DLSSModule::capture_subsurface(draw::View &view,
 
 void DLSSModule::prepare_guides(draw::View &view)
 {
+  if (super_resolution()) {
+    if (!risk_shader_) {
+      risk_shader_ = GPU_shader_create_from_info_name("eevee_dlss_risk");
+    }
+    if (!risk_shader_) {
+      reject("SR refraction guide shader compilation failed");
+      return;
+    }
+    risk_pass_.init();
+    risk_pass_.shader_set(risk_shader_);
+    inst_.gbuffer.bind_resources(risk_pass_);
+    risk_pass_.bind_image("risk", effect_risk_);
+    risk_pass_.dispatch(int3(math::divide_ceil(input_size_, int2(8)), 1));
+    inst_.manager->submit(risk_pass_, view);
+  }
   if (!ray_reconstruction()) {
     return;
   }
@@ -705,6 +906,11 @@ void DLSSModule::dump_guides()
   dump("depth", depth_, 1);
   dump("motion", motion_, 2);
   dump("output", output_, 4);
+  if (!rr_) {
+    dump("coverage", coverage_, 1);
+    dump("bias", bias_, 1);
+    dump("rgba", composite_, 4);
+  }
   if (rr_) {
     dump("diffuse", diffuse_, 4);
     dump("specular", specular_, 4);
@@ -757,6 +963,7 @@ bool DLSSViewportAdapter::display(Instance &inst,
   pass_.state_set(DRW_STATE_WRITE_COLOR | DRW_STATE_WRITE_DEPTH | DRW_STATE_DEPTH_ALWAYS);
   pass_.bind_texture("sr_output", color);
   pass_.bind_texture("sr_depth", depth);
+  pass_.push_constant("opaque", inst.film.reconstruction().ray_reconstruction());
   pass_.push_constant("sr_jitter", jitter);
   pass_.push_constant("crop", crop);
   pass_.draw_procedural(GPU_PRIM_TRIS, 1, 3);
@@ -779,10 +986,14 @@ bool DLSSRenderAdapter::resolve(Instance &inst, gpu::Texture *color, int2 extent
     return false;
   }
   output_.ensure_2d(gpu::TextureFormat::SFLOAT_16_16_16_16, extent);
+  if (!output_.is_valid()) {
+    return false;
+  }
   pass_.init();
   pass_.shader_set(shader_);
   pass_.bind_texture("sr_output", color);
   pass_.bind_image("final_output", output_);
+  pass_.push_constant("opaque", inst.film.reconstruction().ray_reconstruction());
   pass_.push_constant("crop", crop);
   pass_.dispatch(int3(math::divide_ceil(extent, int2(8)), 1));
   inst.manager->submit(pass_);
